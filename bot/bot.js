@@ -166,9 +166,15 @@ async function handleSlashCommand(interaction) {
     const errorMessage = 'Có lỗi xảy ra khi xử lý lệnh!';
 
     if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content: errorMessage, ephemeral: true });
+      await interaction.followUp({
+        content: errorMessage,
+        flags: MessageFlags.Ephemeral,
+      });
     } else {
-      await interaction.reply({ content: errorMessage, ephemeral: true });
+      await interaction.reply({
+        content: errorMessage,
+        flags: MessageFlags.Ephemeral,
+      });
     }
   }
 }
@@ -191,7 +197,7 @@ async function handleSetup(interaction) {
 
   await interaction.reply({
     content: `✅ Đã cấu hình bot thành công!\nForum: ${forumChannel}\nAdmin Channel: ${adminChannel}\nAdmin Role: ${adminRole}`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -223,7 +229,7 @@ async function handleConfig(interaction) {
       }
     );
 
-  await interaction.reply({ embeds: [embed], ephemeral: true });
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
 
 async function handleCreateGuide(interaction) {
@@ -237,7 +243,7 @@ async function handleCreateGuide(interaction) {
   if (!forumChannel) {
     await interaction.reply({
       content: '❌ Không tìm thấy forum channel!',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -280,7 +286,7 @@ async function handleCreateGuide(interaction) {
 
   await interaction.reply({
     content: '✅ Đã tạo thread hướng dẫn gửi confession.',
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -320,7 +326,7 @@ async function handleModalSubmit(interaction) {
     const isAnonymous = interaction.customId.includes('anon');
     const content = interaction.fields.getTextInputValue('confession_content');
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const settings = await GuildSettings.findOne({
       guild_id: interaction.guildId,
@@ -328,7 +334,7 @@ async function handleModalSubmit(interaction) {
     if (!settings) {
       await interaction.followUp({
         content: '⚠️ Server chưa setup. Admin cần chạy lệnh `/setup`.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -392,7 +398,7 @@ async function handleModalSubmit(interaction) {
       );
       await interaction.followUp({
         content: `✅ Đã gửi confession #${confessionNumber} thành công!`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     } catch (error) {
       await interaction.followUp({
@@ -411,7 +417,7 @@ async function handleModalSubmit(interaction) {
           '3. Bật mục "Tin nhắn trực tiếp và Yêu cầu kết bạn"\n\n' +
           `✅ Confession #${confessionNumber} đã được gửi thành công!\n` +
           '💡 Sau khi bật DM, bạn sẽ nhận được thông báo khi confession được duyệt.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   }
@@ -429,7 +435,7 @@ async function handleApprovalButtons(interaction) {
   if (!confession) {
     await interaction.reply({
       content: '❌ Confession không tồn tại!',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -437,7 +443,7 @@ async function handleApprovalButtons(interaction) {
   if (confession.status !== 'pending') {
     await interaction.reply({
       content: '❌ Confession này đã được xử lý!',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -451,7 +457,7 @@ async function handleApprovalButtons(interaction) {
     if (!forumChannel) {
       await interaction.reply({
         content: '❌ Không tìm thấy forum channel!',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }
@@ -473,7 +479,7 @@ async function handleApprovalButtons(interaction) {
 
     await interaction.reply({
       content: '✅ Đã duyệt và đăng confession lên forum.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     // Notify user
@@ -493,7 +499,7 @@ async function handleApprovalButtons(interaction) {
 
     await interaction.reply({
       content: '🗑️ Confession đã bị từ chối và xóa khỏi hệ thống.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
 
     // Notify user
@@ -516,7 +522,7 @@ async function checkAdminPermission(interaction) {
   if (!settings) {
     await interaction.reply({
       content: '⚠️ Server chưa setup. Admin cần chạy lệnh `/setup`.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return false;
   }
@@ -524,7 +530,7 @@ async function checkAdminPermission(interaction) {
   if (!interaction.member.roles.cache.has(settings.admin_role_id)) {
     await interaction.reply({
       content: '⛔ Bạn không có quyền sử dụng lệnh này.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return false;
   }
@@ -618,21 +624,24 @@ async function showConfessionList(interaction, status, page = 0) {
     text: `Trang ${page + 1}/${totalPages} • Tổng: ${totalCount} confession`,
   });
 
+  // FIX: Tạo unique custom_id cho mỗi button
+  const statusPrefix = status || 'all';
+  const prevPage = Math.max(0, page - 1);
+  const nextPage = Math.min(totalPages - 1, page + 1);
+
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`page_${status || 'all'}_${Math.max(0, page - 1)}`)
+      .setCustomId(`page_prev_${statusPrefix}_${prevPage}_${Date.now()}`) // Thêm timestamp để unique
       .setLabel('◀️ Trước')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === 0),
     new ButtonBuilder()
-      .setCustomId(
-        `page_${status || 'all'}_${Math.min(totalPages - 1, page + 1)}`
-      )
+      .setCustomId(`page_next_${statusPrefix}_${nextPage}_${Date.now() + 1}`) // Thêm timestamp khác
       .setLabel('▶️ Sau')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === totalPages - 1),
     new ButtonBuilder()
-      .setCustomId(`page_${status || 'all'}_${page}`)
+      .setCustomId(`page_refresh_${statusPrefix}_${page}_${Date.now() + 2}`) // Thêm timestamp khác nữa
       .setLabel('🔄 Làm mới')
       .setStyle(ButtonStyle.Primary)
   );
@@ -640,16 +649,109 @@ async function showConfessionList(interaction, status, page = 0) {
   await interaction.reply({
     embeds: [embed],
     components: [row],
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
 async function handlePaginationButtons(interaction) {
-  const [, status, pageStr] = interaction.customId.split('_');
-  const page = parseInt(pageStr);
+  const customIdParts = interaction.customId.split('_');
+  const action = customIdParts[1]; // prev, next, refresh
+  const status = customIdParts[2]; // pending, approved, all
+  const page = parseInt(customIdParts[3]);
 
-  await showConfessionList(interaction, status === 'all' ? null : status, page);
   await interaction.deferUpdate();
+
+  // Tạo lại embed với trang mới
+  const perPage = 5;
+  const query = { guild_id: interaction.guildId };
+  if (status !== 'all') query.status = status;
+
+  const confessions = await Confession.find(query)
+    .sort({ confession_id: 1 })
+    .skip(page * perPage)
+    .limit(perPage);
+
+  const totalCount = await Confession.countDocuments(query);
+  const totalPages = Math.max(1, Math.ceil(totalCount / perPage));
+
+  let title, color;
+  if (status === 'pending') {
+    title = '📋 Confession Đang Chờ Duyệt';
+    color = 0xff9900;
+  } else if (status === 'approved') {
+    title = '✅ Confession Đã Duyệt';
+    color = 0x00ff00;
+  } else {
+    title = '📜 Tất Cả Confession';
+    color = 0x0099ff;
+  }
+
+  const embed = new EmbedBuilder().setTitle(title).setColor(color);
+
+  if (confessions.length === 0) {
+    embed.setDescription(
+      status === 'pending'
+        ? '✅ Không có confession nào đang chờ duyệt!'
+        : status === 'approved'
+        ? '📭 Chưa có confession nào được duyệt!'
+        : '📭 Chưa có confession nào!'
+    );
+  } else {
+    for (const confession of confessions) {
+      const statusIcon = confession.status === 'approved' ? '✅' : '⏳';
+      const anonymousStatus = confession.anonymous ? 'Có' : 'Không';
+      const userInfo = confession.anonymous
+        ? 'Ẩn danh'
+        : `<@${confession.user_id}>`;
+      const contentPreview =
+        confession.content.length > 100
+          ? confession.content.substring(0, 100) + '...'
+          : confession.content;
+
+      const formattedTime = new Date(confession.timestamp).toLocaleDateString(
+        'vi-VN',
+        {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }
+      );
+
+      embed.addFields({
+        name: `${statusIcon} Confession #${confession.confession_id}`,
+        value: `**Ẩn danh:** ${anonymousStatus}\n**Người gửi:** ${userInfo}\n**Thời gian:** ${formattedTime}\n**Nội dung:** ${contentPreview}`,
+        inline: false,
+      });
+    }
+  }
+
+  embed.setFooter({
+    text: `Trang ${page + 1}/${totalPages} • Tổng: ${totalCount} confession`,
+  });
+
+  const prevPage = Math.max(0, page - 1);
+  const nextPage = Math.min(totalPages - 1, page + 1);
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`page_prev_${status}_${prevPage}_${Date.now()}`)
+      .setLabel('◀️ Trước')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page === 0),
+    new ButtonBuilder()
+      .setCustomId(`page_next_${status}_${nextPage}_${Date.now() + 1}`)
+      .setLabel('▶️ Sau')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page === totalPages - 1),
+    new ButtonBuilder()
+      .setCustomId(`page_refresh_${status}_${page}_${Date.now() + 2}`)
+      .setLabel('🔄 Làm mới')
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function handleApprove(interaction) {
@@ -665,7 +767,7 @@ async function handleApprove(interaction) {
   if (!confession) {
     await interaction.reply({
       content: '❌ Không tìm thấy confession với ID này hoặc đã được xử lý.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -678,7 +780,7 @@ async function handleApprove(interaction) {
   if (!forumChannel) {
     await interaction.reply({
       content: '❌ Không tìm thấy forum channel!',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -700,7 +802,7 @@ async function handleApprove(interaction) {
 
   await interaction.reply({
     content: `✅ Đã duyệt confession #${confessionId} và đăng lên forum!`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   // Notify user
@@ -726,7 +828,7 @@ async function handleDelete(interaction) {
   if (!confession) {
     await interaction.reply({
       content: '❌ Không tìm thấy confession với ID này.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -753,7 +855,10 @@ async function handleDelete(interaction) {
       ? `🗑️ Đã xóa confession #${confessionId} khỏi hệ thống và forum!`
       : `🗑️ Đã xóa confession #${confessionId} khỏi hệ thống!`;
 
-  await interaction.reply({ content: statusMessage, ephemeral: true });
+  await interaction.reply({
+    content: statusMessage,
+    flags: MessageFlags.Ephemeral,
+  });
 
   // Notify user
   try {
@@ -778,7 +883,7 @@ async function handleDetail(interaction) {
   if (!confession) {
     await interaction.reply({
       content: '❌ Không tìm thấy confession với ID này.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return;
   }
@@ -827,7 +932,7 @@ async function handleDetail(interaction) {
 
   embed.setFooter({ text: footerText });
 
-  await interaction.reply({ embeds: [embed], ephemeral: true });
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
 
 module.exports = { initializeBot };
