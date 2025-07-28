@@ -340,10 +340,15 @@ async function handleModalSubmit(interaction) {
     }
 
     // Get next confession ID
-    const confessionCount = await Confession.countDocuments({
+    const lastConfession = await Confession.findOne({
       guild_id: interaction.guildId,
-    });
-    const confessionNumber = confessionCount + 1;
+    })
+      .sort({ confession_id: -1 })
+      .select('confession_id');
+
+    const confessionNumber = lastConfession
+      ? lastConfession.confession_id + 1
+      : 1;
 
     // Save to database
     const confession = new Confession({
