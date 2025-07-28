@@ -20,14 +20,10 @@ async function initializeBot(discordClient) {
 
   client.once('ready', async () => {
     console.log(`🤖 Bot is online: ${client.user.tag}`);
-
-    // Register slash commands
     await registerCommands();
-
     console.log('✅ Slash commands registered');
   });
 
-  // Handle interactions
   client.on('interactionCreate', async (interaction) => {
     if (interaction.isChatInputCommand()) {
       await handleSlashCommand(interaction);
@@ -311,6 +307,8 @@ async function handleButtonInteraction(interaction) {
     modal.addComponents(actionRow);
 
     await interaction.showModal(modal);
+  } else if (customId.startsWith('anonymous_reply_')) {
+    await handleAnonymousReply(interaction);
   } else if (
     customId.startsWith('approve_') ||
     customId.startsWith('reject_')
@@ -321,110 +319,175 @@ async function handleButtonInteraction(interaction) {
   }
 }
 
+async function handleAnonymousReply(interaction) {
+  const confessionId = interaction.customId.split('_')[2];
+
+  const modal = new ModalBuilder()
+    .setCustomId(`reply_modal_${confessionId}`)
+    .setTitle(`💬 Trả lời ẩn danh cho Confession #${confessionId}`);
+
+  const contentInput = new TextInputBuilder()
+    .setCustomId('reply_content')
+    .setLabel('Nội Dung Trả Lời')
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(2000)
+    .setPlaceholder('Nhập nội dung trả lời của bạn...');
+
+  const actionRow = new ActionRowBuilder().addComponents(contentInput);
+  modal.addComponents(actionRow);
+
+  await interaction.showModal(modal);
+}
+
 async function handleModalSubmit(interaction) {
   if (interaction.customId.startsWith('confession_modal_')) {
-    const isAnonymous = interaction.customId.includes('anon');
-    const content = interaction.fields.getTextInputValue('confession_content');
+    await handleConfessionModalSubmit(interaction);
+  } else if (interaction.customId.startsWith('reply_modal_')) {
+    await handleReplyModalSubmit(interaction);
+  }
+}
 
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+async function handleConfessionModalSubmit(interaction) {
+  const isAnonymous = interaction.customId.includes('anon');
+  const content = interaction.fields.getTextInputValue('confession_content');
 
-    const settings = await GuildSettings.findOne({
-      guild_id: interaction.guildId,
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const settings = await GuildSettings.findOne({
+    guild_id: interaction.guildId,
+  });
+  if (!settings) {
+    await interaction.followUp({
+      content: '⚠️ Server chưa setup. Admin cần chạy lệnh `/setup`.',
+      flags: MessageFlags.Ephemeral,
     });
-    if (!settings) {
-      await interaction.followUp({
-        content: '⚠️ Server chưa setup. Admin cần chạy lệnh `/setup`.',
+    return;
+  }
+
+  // FIX: Tìm ID lớn nhất và +1 thay vì dùng count
+  const lastConfession = await Confession.findOne({
+    guild_id: interaction.guildId,
+  })
+    .sort({ confession_id: -1 })
+    .select('confession_id');
+
+  const confessionNumber = lastConfession
+    ? lastConfession.confession_id + 1
+    : 1;
+
+  // Save to database
+  const confession = new Confession({
+    confession_id: confessionNumber,
+    guild_id: interaction.guildId,
+    content: content,
+    anonymous: isAnonymous,
+    user_id: interaction.user.id,
+    status: 'pending',
+  });
+
+  await confession.save();
+
+  // Send to admin channel
+  const adminChannel = client.channels.cache.get(settings.admin_channel_id);
+  if (adminChannel) {
+    const embed = new EmbedBuilder()
+      .setTitle(`📥 Confession Pending #${confessionNumber}`)
+      .setDescription(content)
+      .setColor(0xff9900)
+      .addFields(
+        {
+          name: 'Ẩn danh',
+          value: isAnonymous ? 'Có' : 'Không',
+          inline: true,
+        },
+        {
+          name: 'Người gửi',
+          value: `<@${interaction.user.id}>`,
+          inline: false,
+        }
+      );
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`approve_${confessionNumber}`)
+        .setLabel('Duyệt')
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`reject_${confessionNumber}`)
+        .setLabel('Từ chối')
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await adminChannel.send({ embeds: [embed], components: [row] });
+  }
+
+  // Try to DM user
+  try {
+    await interaction.user.send(
+      `📨 Bạn đã gửi confession #${confessionNumber} thành công! Đang chờ admin duyệt.`
+    );
+    await interaction.followUp({
+      content: `✅ Đã gửi confession #${confessionNumber} thành công!`,
+      flags: MessageFlags.Ephemeral,
+    });
+  } catch (error) {
+    await interaction.followUp({
+      content:
+        '⚠️ **Bot không thể gửi tin nhắn riêng cho bạn!**\n\n' +
+        'Vui lòng bật **tin nhắn trực tiếp từ server** để nhận thông báo khi confession được duyệt.\n\n' +
+        `✅ Confession #${confessionNumber} đã được gửi thành công!\n` +
+        '💡 Sau khi bật DM, bạn sẽ nhận được thông báo khi confession được duyệt.',
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+async function handleReplyModalSubmit(interaction) {
+  const confessionId = interaction.customId.split('_')[2];
+  const replyContent = interaction.fields.getTextInputValue('reply_content');
+
+  // Kiểm tra confession có tồn tại không
+  const confession = await Confession.findOne({
+    confession_id: parseInt(confessionId),
+    guild_id: interaction.guildId,
+    status: 'approved',
+  });
+
+  if (!confession || !confession.thread_id) {
+    await interaction.reply({
+      content: '❌ Không tìm thấy confession hoặc thread không tồn tại.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  try {
+    const thread = await client.channels.fetch(confession.thread_id);
+
+    if (!thread) {
+      await interaction.reply({
+        content: '❌ Không tìm thấy thread của confession.',
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
 
-    // Get next confession ID
-    const lastConfession = await Confession.findOne({
-      guild_id: interaction.guildId,
-    })
-      .sort({ confession_id: -1 })
-      .select('confession_id');
+    // Embed với prefix "Gửi ẩn danh:"
+    const replyEmbed = new EmbedBuilder()
+      .setDescription(`**Gửi ẩn danh tới tác giả:**\n${replyContent}`)
+      .setColor(0x36393f);
 
-    const confessionNumber = lastConfession
-      ? lastConfession.confession_id + 1
-      : 1;
+    await thread.send({ embeds: [replyEmbed] });
 
-    // Save to database
-    const confession = new Confession({
-      confession_id: confessionNumber,
-      guild_id: interaction.guildId,
-      content: content,
-      anonymous: isAnonymous,
-      user_id: interaction.user.id,
-      status: 'pending',
+    // Đóng modal mà không hiển thị gì
+    await interaction.deferUpdate();
+  } catch (error) {
+    console.error('Error sending anonymous reply:', error);
+    await interaction.reply({
+      content: '❌ Có lỗi xảy ra khi gửi trả lời.',
+      flags: MessageFlags.Ephemeral,
     });
-
-    await confession.save();
-
-    // Send to admin channel
-    const adminChannel = client.channels.cache.get(settings.admin_channel_id);
-    if (adminChannel) {
-      const embed = new EmbedBuilder()
-        .setTitle(`📥 Confession Pending #${confessionNumber}`)
-        .setDescription(content)
-        .setColor(0xff9900)
-        .addFields(
-          {
-            name: 'Ẩn danh',
-            value: isAnonymous ? 'Có' : 'Không',
-            inline: true,
-          },
-          {
-            name: 'Người gửi',
-            value: isAnonymous ? 'Ẩn danh' : `<@${interaction.user.id}>`,
-            inline: false,
-          }
-        );
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`approve_${confessionNumber}`)
-          .setLabel('Duyệt')
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`reject_${confessionNumber}`)
-          .setLabel('Từ chối')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await adminChannel.send({ embeds: [embed], components: [row] });
-    }
-
-    // Try to DM user
-    try {
-      await interaction.user.send(
-        `📨 Bạn đã gửi confession #${confessionNumber} thành công! Đang chờ admin duyệt.`
-      );
-      await interaction.followUp({
-        content: `✅ Đã gửi confession #${confessionNumber} thành công!`,
-        flags: MessageFlags.Ephemeral,
-      });
-    } catch (error) {
-      await interaction.followUp({
-        content:
-          '⚠️ **Bot không thể gửi tin nhắn riêng cho bạn!**\n\n' +
-          'Vui lòng bật **tin nhắn trực tiếp từ server** để nhận thông báo khi confession được duyệt.\n\n' +
-          '📱 **Trên điện thoại:**\n' +
-          '1. Nhấn vào avatar góc dưới bên phải\n' +
-          '2. Nhấn vào biểu tượng bánh răng góc trên bên phải\n' +
-          '3. Nhấn vào "Nội dung & cộng đồng"\n' +
-          '4. Kéo xuống phần "Cài đặt máy chủ"\n' +
-          '5. Bật mục "Tin nhắn trực tiếp và yêu cầu kết bạn"\n\n' +
-          '💻 **Trên máy tính:**\n' +
-          '1. Nhấp chuột phải vào icon server\n' +
-          '2. Chọn "Cài đặt bảo mật"\n' +
-          '3. Bật mục "Tin nhắn trực tiếp và Yêu cầu kết bạn"\n\n' +
-          `✅ Confession #${confessionNumber} đã được gửi thành công!\n` +
-          '💡 Sau khi bật DM, bạn sẽ nhận được thông báo khi confession được duyệt.',
-        flags: MessageFlags.Ephemeral,
-      });
-    }
   }
 }
 
@@ -476,6 +539,22 @@ async function handleApprovalButtons(interaction) {
     const thread = await forumChannel.threads.create({
       name: `Confession #${confession.confession_id}`,
       message: { content: fullContent },
+    });
+
+    // Tạo button trả lời ẩn danh
+    const replyRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`anonymous_reply_${confession.confession_id}`)
+        .setLabel('Trả lời ẩn danh')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('💬')
+    );
+
+    // Gửi message với button trả lời ẩn danh
+    await thread.send({
+      content:
+        '**🎩 Nếu bạn muốn gửi ẩn danh tới tác giả, ấn vào nút bên dưới.**',
+      components: [replyRow],
     });
 
     confession.status = 'approved';
@@ -543,7 +622,7 @@ async function checkAdminPermission(interaction) {
   return true;
 }
 
-// Implement other command handlers (pending, approved, all, approve, delete, detail)
+// Implement other command handlers
 async function handlePending(interaction) {
   if (!(await checkAdminPermission(interaction))) return;
   await showConfessionList(interaction, 'pending');
@@ -598,9 +677,7 @@ async function showConfessionList(interaction, status, page = 0) {
     for (const confession of confessions) {
       const statusIcon = confession.status === 'approved' ? '✅' : '⏳';
       const anonymousStatus = confession.anonymous ? 'Có' : 'Không';
-      const userInfo = confession.anonymous
-        ? 'Ẩn danh'
-        : `<@${confession.user_id}>`;
+      const userTag = `<@${confession.user_id}>`;
       const contentPreview =
         confession.content.length > 100
           ? confession.content.substring(0, 100) + '...'
@@ -619,7 +696,7 @@ async function showConfessionList(interaction, status, page = 0) {
 
       embed.addFields({
         name: `${statusIcon} Confession #${confession.confession_id}`,
-        value: `**Ẩn danh:** ${anonymousStatus}\n**Người gửi:** ${userInfo}\n**Thời gian:** ${formattedTime}\n**Nội dung:** ${contentPreview}`,
+        value: `**Ẩn danh:** ${anonymousStatus}\n**Người gửi:** ${userTag}\n**Thời gian:** ${formattedTime}\n**Nội dung:** ${contentPreview}`,
         inline: false,
       });
     }
@@ -629,24 +706,23 @@ async function showConfessionList(interaction, status, page = 0) {
     text: `Trang ${page + 1}/${totalPages} • Tổng: ${totalCount} confession`,
   });
 
-  // FIX: Tạo unique custom_id cho mỗi button
   const statusPrefix = status || 'all';
   const prevPage = Math.max(0, page - 1);
   const nextPage = Math.min(totalPages - 1, page + 1);
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`page_prev_${statusPrefix}_${prevPage}_${Date.now()}`) // Thêm timestamp để unique
+      .setCustomId(`page_prev_${statusPrefix}_${prevPage}_${Date.now()}`)
       .setLabel('◀️ Trước')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === 0),
     new ButtonBuilder()
-      .setCustomId(`page_next_${statusPrefix}_${nextPage}_${Date.now() + 1}`) // Thêm timestamp khác
+      .setCustomId(`page_next_${statusPrefix}_${nextPage}_${Date.now() + 1}`)
       .setLabel('▶️ Sau')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === totalPages - 1),
     new ButtonBuilder()
-      .setCustomId(`page_refresh_${statusPrefix}_${page}_${Date.now() + 2}`) // Thêm timestamp khác nữa
+      .setCustomId(`page_refresh_${statusPrefix}_${page}_${Date.now() + 2}`)
       .setLabel('🔄 Làm mới')
       .setStyle(ButtonStyle.Primary)
   );
@@ -660,13 +736,12 @@ async function showConfessionList(interaction, status, page = 0) {
 
 async function handlePaginationButtons(interaction) {
   const customIdParts = interaction.customId.split('_');
-  const action = customIdParts[1]; // prev, next, refresh
-  const status = customIdParts[2]; // pending, approved, all
+  const action = customIdParts[1];
+  const status = customIdParts[2];
   const page = parseInt(customIdParts[3]);
 
   await interaction.deferUpdate();
 
-  // Tạo lại embed với trang mới
   const perPage = 5;
   const query = { guild_id: interaction.guildId };
   if (status !== 'all') query.status = status;
@@ -705,9 +780,7 @@ async function handlePaginationButtons(interaction) {
     for (const confession of confessions) {
       const statusIcon = confession.status === 'approved' ? '✅' : '⏳';
       const anonymousStatus = confession.anonymous ? 'Có' : 'Không';
-      const userInfo = confession.anonymous
-        ? 'Ẩn danh'
-        : `<@${confession.user_id}>`;
+      const userTag = `<@${confession.user_id}>`;
       const contentPreview =
         confession.content.length > 100
           ? confession.content.substring(0, 100) + '...'
@@ -726,7 +799,7 @@ async function handlePaginationButtons(interaction) {
 
       embed.addFields({
         name: `${statusIcon} Confession #${confession.confession_id}`,
-        value: `**Ẩn danh:** ${anonymousStatus}\n**Người gửi:** ${userInfo}\n**Thời gian:** ${formattedTime}\n**Nội dung:** ${contentPreview}`,
+        value: `**Ẩn danh:** ${anonymousStatus}\n**Người gửi:** ${userTag}\n**Thời gian:** ${formattedTime}\n**Nội dung:** ${contentPreview}`,
         inline: false,
       });
     }
@@ -799,6 +872,21 @@ async function handleApprove(interaction) {
   const thread = await forumChannel.threads.create({
     name: `Confession #${confession.confession_id}`,
     message: { content: fullContent },
+  });
+
+  // Tạo button trả lời ẩn danh
+  const replyRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`anonymous_reply_${confession.confession_id}`)
+      .setLabel('💬 Trả lời ẩn danh')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('🔒')
+  );
+
+  // Gửi message với button trả lời ẩn danh
+  await thread.send({
+    content: '👆 Ấn vào nút bên dưới để trả lời ẩn danh cho confession này.',
+    components: [replyRow],
   });
 
   confession.status = 'approved';
@@ -908,7 +996,7 @@ async function handleDetail(interaction) {
       },
       {
         name: 'Người gửi',
-        value: confession.anonymous ? 'Ẩn danh' : `<@${confession.user_id}>`,
+        value: `<@${confession.user_id}>`,
         inline: true,
       },
       {
@@ -931,11 +1019,9 @@ async function handleDetail(interaction) {
     });
   }
 
-  const footerText = confession.anonymous
-    ? `Guild ID: ${interaction.guildId} | Confession ẩn danh`
-    : `Guild ID: ${interaction.guildId} | User ID: ${confession.user_id}`;
-
-  embed.setFooter({ text: footerText });
+  embed.setFooter({
+    text: `Guild ID: ${interaction.guildId} | User ID: ${confession.user_id}`,
+  });
 
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
