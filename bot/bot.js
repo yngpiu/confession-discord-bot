@@ -35,13 +35,23 @@ async function initializeBot(discordClient) {
   });
 
   client.on('interactionCreate', async (interaction) => {
-    const interactionType = interaction.isChatInputCommand() ? 'slash command' :
-                          interaction.isButton() ? 'button' :
-                          interaction.isModalSubmit() ? 'modal' : 'không xác định';
+    const interactionType = interaction.isChatInputCommand()
+      ? 'slash command'
+      : interaction.isButton()
+      ? 'button'
+      : interaction.isModalSubmit()
+      ? 'modal'
+      : 'không xác định';
 
     console.log(`🎯 Nhận được interaction: ${interactionType}`);
-    console.log(`👤 Người dùng: ${interaction.user.tag} (${interaction.user.id})`);
-    console.log(`🏠 Guild: ${interaction.guild?.name || 'DM'} (${interaction.guildId || 'N/A'})`);
+    console.log(
+      `👤 Người dùng: ${interaction.user.tag} (${interaction.user.id})`
+    );
+    console.log(
+      `🏠 Guild: ${interaction.guild?.name || 'DM'} (${
+        interaction.guildId || 'N/A'
+      })`
+    );
 
     if (interaction.isChatInputCommand()) {
       console.log(`⚡ Slash command: /${interaction.commandName}`);
@@ -209,8 +219,9 @@ async function handleSlashCommand(interaction) {
     }
 
     const executionTime = Date.now() - startTime;
-    console.log(`⏱️ Command ${commandName} được thực hiện trong ${executionTime}ms`);
-
+    console.log(
+      `⏱️ Command ${commandName} được thực hiện trong ${executionTime}ms`
+    );
   } catch (error) {
     console.error(`❌ Lỗi khi xử lý slash command ${commandName}:`, error);
     console.error(`💥 Chi tiết lỗi:`, error.message);
@@ -268,7 +279,6 @@ async function handleSetup(interaction) {
     });
 
     console.log('📤 Đã gửi xác nhận setup cho người dùng');
-
   } catch (error) {
     console.error('❌ Thất bại khi lưu guild settings:', error);
     throw error;
@@ -293,7 +303,8 @@ async function handleConfig(interaction) {
     if (!settings) {
       console.log('⚠️ Không tìm thấy settings cho guild này');
       await interaction.reply({
-        content: '⚠️ Server chưa được cấu hình. Hãy sử dụng lệnh `/setup` trước.',
+        content:
+          '⚠️ Server chưa được cấu hình. Hãy sử dụng lệnh `/setup` trước.',
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -324,7 +335,6 @@ async function handleConfig(interaction) {
 
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     console.log('📤 Đã gửi embed cấu hình cho người dùng');
-
   } catch (error) {
     console.error('❌ Thất bại khi lấy cấu hình:', error);
     throw error;
@@ -349,7 +359,8 @@ async function handleCreateGuide(interaction) {
     if (!settings) {
       console.log('⚠️ Không tìm thấy settings cho guild này');
       await interaction.reply({
-        content: '⚠️ Server chưa được cấu hình. Hãy sử dụng lệnh `/setup` trước.',
+        content:
+          '⚠️ Server chưa được cấu hình. Hãy sử dụng lệnh `/setup` trước.',
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -418,7 +429,6 @@ async function handleCreateGuide(interaction) {
     });
 
     console.log('📤 Đã gửi thông báo thành công cho người dùng');
-
   } catch (error) {
     console.error('❌ Thất bại khi tạo guide thread:', error);
     throw error;
@@ -436,9 +446,7 @@ async function handleButtonInteraction(interaction) {
     console.log(`🎭 Chế độ ẩn danh: ${isAnonymous}`);
 
     const modal = new ModalBuilder()
-      .setCustomId(
-        `confession_modal_${isAnonymous ? 'anon' : 'named'}`
-      )
+      .setCustomId(`confession_modal_${isAnonymous ? 'anon' : 'named'}`)
       .setTitle('📨 Gửi Confession');
 
     const contentInput = new TextInputBuilder()
@@ -453,7 +461,6 @@ async function handleButtonInteraction(interaction) {
 
     await interaction.showModal(modal);
     console.log('📝 Đã hiển thị modal cho người dùng');
-
   } else if (customId.startsWith('anonymous_reply_')) {
     console.log('💬 Đang xử lý anonymous reply button');
     await handleAnonymousReply(interaction);
@@ -473,7 +480,9 @@ async function handleButtonInteraction(interaction) {
 
 async function handleAnonymousReply(interaction) {
   const confessionId = interaction.customId.split('_')[2];
-  console.log(`💬 Đang tạo anonymous reply modal cho confession: ${confessionId}`);
+  console.log(
+    `💬 Đang tạo anonymous reply modal cho confession: ${confessionId}`
+  );
 
   const modal = new ModalBuilder()
     .setCustomId(`reply_modal_${confessionId}`)
@@ -551,7 +560,11 @@ async function handleConfessionModalSubmit(interaction) {
       : 1;
 
     console.log(`📊 ID confession mới sẽ là: ${confessionNumber}`);
-    console.log(`📊 ID confession cuối cùng là: ${lastConfession?.confession_id || 'không có'}`);
+    console.log(
+      `📊 ID confession cuối cùng là: ${
+        lastConfession?.confession_id || 'không có'
+      }`
+    );
 
     // Save to database
     console.log('💾 Đang lưu confession vào database...');
@@ -603,7 +616,10 @@ async function handleConfessionModalSubmit(interaction) {
           .setStyle(ButtonStyle.Danger)
       );
 
-      const adminMessage = await adminChannel.send({ embeds: [embed], components: [row] });
+      const adminMessage = await adminChannel.send({
+        embeds: [embed],
+        components: [row],
+      });
       console.log(`📤 Đã gửi thông báo admin: ${adminMessage.id}`);
     } else {
       console.log('❌ Không tìm thấy admin channel trong cache');
@@ -622,7 +638,6 @@ async function handleConfessionModalSubmit(interaction) {
         flags: MessageFlags.Ephemeral,
       });
       console.log('📤 Đã gửi response thành công');
-
     } catch (error) {
       console.log('❌ Thất bại khi gửi DM:', error.message);
 
@@ -636,7 +651,6 @@ async function handleConfessionModalSubmit(interaction) {
       });
       console.log('📤 Đã gửi cảnh báo DM response');
     }
-
   } catch (error) {
     console.error('❌ Thất bại khi xử lý confession submission:', error);
     throw error;
@@ -670,7 +684,9 @@ async function handleReplyModalSubmit(interaction) {
       return;
     }
 
-    console.log(`✅ Đã tìm thấy confession với thread: ${confession.thread_id}`);
+    console.log(
+      `✅ Đã tìm thấy confession với thread: ${confession.thread_id}`
+    );
 
     console.log('🔍 Đang lấy thread từ Discord...');
     const thread = await client.channels.fetch(confession.thread_id);
@@ -698,7 +714,6 @@ async function handleReplyModalSubmit(interaction) {
     // Đóng modal mà không hiển thị gì
     await interaction.deferUpdate();
     console.log('✅ Đã update modal interaction');
-
   } catch (error) {
     console.error('❌ Lỗi khi gửi anonymous reply:', error);
     console.error('💥 Chi tiết lỗi:', error.message);
@@ -719,7 +734,9 @@ async function handleApprovalButtons(interaction) {
   }
 
   const [action, confessionId] = interaction.customId.split('_');
-  console.log(`📊 Hành động approval: ${action} cho confession ${confessionId}`);
+  console.log(
+    `📊 Hành động approval: ${action} cho confession ${confessionId}`
+  );
 
   try {
     console.log('🔍 Đang tìm kiếm confession trong database...');
@@ -771,17 +788,27 @@ async function handleApprovalButtons(interaction) {
       console.log(`✅ Đã tìm thấy forum channel: ${forumChannel.name}`);
 
       let fullContent = confession.content;
-      if (!confession.anonymous) {
-        console.log('👤 Đang thêm tên tác giả vào nội dung');
-        const user = await client.users.fetch(confession.user_id);
-        fullContent += `\n\n**Tác giả: @${user.username}**`;
-        console.log(`👤 Tác giả: ${user.username}`);
-      }
 
       console.log('🧵 Đang tạo confession thread...');
+      const user = await client.users.fetch(confession.user_id);
       const thread = await forumChannel.threads.create({
         name: `Confession #${confession.confession_id}`,
-        message: { content: fullContent },
+        message: {
+          embeds: [
+            {
+              description:
+                fullContent.length > 4096
+                  ? fullContent.substring(0, 4093) + '...'
+                  : fullContent,
+              color: 1357990,
+              footer: {
+                text: `Confession #${confession.confession_id} • ${
+                  confession.anonymous ? 'Ẩn danh' : `Từ @${user.username}`
+                }`,
+              },
+            },
+          ],
+        },
       });
 
       console.log(`✅ Đã tạo thread: ${thread.name} (${thread.id})`);
@@ -830,7 +857,6 @@ async function handleApprovalButtons(interaction) {
       } catch (error) {
         console.log('❌ Không thể gửi DM cho người dùng:', error.message);
       }
-
     } else if (action === 'reject') {
       console.log('❌ Đang xử lý rejection...');
 
@@ -861,7 +887,6 @@ async function handleApprovalButtons(interaction) {
         console.log('❌ Không thể gửi DM cho người dùng:', error.message);
       }
     }
-
   } catch (error) {
     console.error('❌ Lỗi khi xử lý approval button:', error);
     throw error;
@@ -871,7 +896,9 @@ async function handleApprovalButtons(interaction) {
 // Helper functions
 async function checkAdminPermission(interaction) {
   console.log('🔒 Đang kiểm tra quyền admin...');
-  console.log(`👤 Người dùng: ${interaction.user.tag} (${interaction.user.id})`);
+  console.log(
+    `👤 Người dùng: ${interaction.user.tag} (${interaction.user.id})`
+  );
   console.log(`🏠 Guild: ${interaction.guildId}`);
 
   try {
@@ -890,7 +917,11 @@ async function checkAdminPermission(interaction) {
     }
 
     console.log(`🎭 Role admin yêu cầu: ${settings.admin_role_id}`);
-    console.log(`👤 Roles của người dùng: ${interaction.member.roles.cache.map(r => r.id).join(', ')}`);
+    console.log(
+      `👤 Roles của người dùng: ${interaction.member.roles.cache
+        .map((r) => r.id)
+        .join(', ')}`
+    );
 
     if (!interaction.member.roles.cache.has(settings.admin_role_id)) {
       console.log('⛔ Người dùng không có role admin yêu cầu');
@@ -903,7 +934,6 @@ async function checkAdminPermission(interaction) {
 
     console.log('✅ Kiểm tra quyền admin thành công');
     return true;
-
   } catch (error) {
     console.error('❌ Lỗi khi kiểm tra quyền admin:', error);
     throw error;
@@ -931,7 +961,11 @@ async function handleAll(interaction) {
 
 async function showConfessionList(interaction, status, page = 0) {
   const perPage = 5;
-  console.log(`📄 Đang hiển thị danh sách confession - Status: ${status || 'tất cả'}, Trang: ${page + 1}`);
+  console.log(
+    `📄 Đang hiển thị danh sách confession - Status: ${
+      status || 'tất cả'
+    }, Trang: ${page + 1}`
+  );
 
   try {
     const query = { guild_id: interaction.guildId };
@@ -977,7 +1011,9 @@ async function showConfessionList(interaction, status, page = 0) {
           : '📭 Chưa có confession nào!'
       );
     } else {
-      console.log(`📝 Đang thêm ${confessions.length} confession fields vào embed`);
+      console.log(
+        `📝 Đang thêm ${confessions.length} confession fields vào embed`
+      );
       for (const confession of confessions) {
         const statusIcon = confession.status === 'approved' ? '✅' : '⏳';
         const anonymousStatus = confession.anonymous ? 'Có' : 'Không';
@@ -1040,7 +1076,6 @@ async function showConfessionList(interaction, status, page = 0) {
     });
 
     console.log('📤 Đã gửi danh sách confession cho người dùng');
-
   } catch (error) {
     console.error('❌ Lỗi khi hiển thị danh sách confession:', error);
     throw error;
@@ -1055,7 +1090,9 @@ async function handlePaginationButtons(interaction) {
   const status = customIdParts[2];
   const page = parseInt(customIdParts[3]);
 
-  console.log(`📊 Pagination: ${action} - Status: ${status} - Trang: ${page + 1}`);
+  console.log(
+    `📊 Pagination: ${action} - Status: ${status} - Trang: ${page + 1}`
+  );
 
   await interaction.deferUpdate();
   console.log('⏳ Đã defer pagination interaction');
@@ -1076,7 +1113,9 @@ async function handlePaginationButtons(interaction) {
     const totalPages = Math.max(1, Math.ceil(totalCount / perPage));
 
     console.log(
-      `📊 Kết quả cập nhật: ${confessions.length} confessions trên trang ${page + 1}/${totalPages}`
+      `📊 Kết quả cập nhật: ${confessions.length} confessions trên trang ${
+        page + 1
+      }/${totalPages}`
     );
 
     let title, color;
@@ -1156,7 +1195,6 @@ async function handlePaginationButtons(interaction) {
 
     await interaction.editReply({ embeds: [embed], components: [row] });
     console.log('📤 Đã cập nhật pagination response');
-
   } catch (error) {
     console.error('❌ Lỗi khi xử lý pagination:', error);
     throw error;
@@ -1210,17 +1248,27 @@ async function handleApprove(interaction) {
     console.log(`✅ Đã tìm thấy forum channel: ${forumChannel.name}`);
 
     let fullContent = confession.content;
-    if (!confession.anonymous) {
-      console.log('👤 Đang thêm tên tác giả vào nội dung');
-      const user = await client.users.fetch(confession.user_id);
-      fullContent += `\n\n**Tác giả: @${user.username}**`;
-      console.log(`👤 Tác giả: ${user.username}`);
-    }
 
     console.log('🧵 Đang tạo confession thread...');
+    const user = await client.users.fetch(confession.user_id);
     const thread = await forumChannel.threads.create({
       name: `Confession #${confession.confession_id}`,
-      message: { content: fullContent },
+      message: {
+        embeds: [
+          {
+            description:
+              fullContent.length > 4096
+                ? fullContent.substring(0, 4093) + '...'
+                : fullContent,
+            color: 1357990,
+            footer: {
+              text: `Confession #${confession.confession_id} • ${
+                confession.anonymous ? 'Ẩn danh' : `Từ @${user.username}`
+              }`,
+            },
+          },
+        ],
+      },
     });
 
     console.log(`✅ Đã tạo thread: ${thread.name} (${thread.id})`);
@@ -1268,7 +1316,6 @@ async function handleApprove(interaction) {
     } catch (error) {
       console.log('❌ Không thể gửi DM cho người dùng:', error.message);
     }
-
   } catch (error) {
     console.error('❌ Lỗi khi xử lý manual approval:', error);
     throw error;
@@ -1311,7 +1358,10 @@ async function handleDelete(interaction) {
           console.log('✅ Đã xóa thread thành công');
         }
       } catch (error) {
-        console.log('⚠️ Thread đã được xóa hoặc không tìm thấy:', error.message);
+        console.log(
+          '⚠️ Thread đã được xóa hoặc không tìm thấy:',
+          error.message
+        );
       }
     }
 
@@ -1346,7 +1396,6 @@ async function handleDelete(interaction) {
     } catch (error) {
       console.log('❌ Không thể gửi DM cho người dùng:', error.message);
     }
-
   } catch (error) {
     console.error('❌ Lỗi khi xử lý delete command:', error);
     throw error;
@@ -1378,7 +1427,9 @@ async function handleDetail(interaction) {
     }
 
     console.log(`✅ Đã tìm thấy confession: ${confession._id}`);
-    console.log(`📊 Status: ${confession.status}, Ẩn danh: ${confession.anonymous}`);
+    console.log(
+      `📊 Status: ${confession.status}, Ẩn danh: ${confession.anonymous}`
+    );
 
     const statusColor = confession.status === 'approved' ? 0x00ff00 : 0xff9900;
     const statusIcon = confession.status === 'approved' ? '✅' : '⏳';
@@ -1386,7 +1437,9 @@ async function handleDetail(interaction) {
     console.log('📝 Đang tạo detail embed...');
 
     const embed = new EmbedBuilder()
-      .setTitle(`${statusIcon} Chi Tiết Confession #${confession.confession_id}`)
+      .setTitle(
+        `${statusIcon} Chi Tiết Confession #${confession.confession_id}`
+      )
       .setDescription(confession.content)
       .setColor(statusColor)
       .addFields(
@@ -1402,7 +1455,8 @@ async function handleDetail(interaction) {
         },
         {
           name: 'Trạng thái',
-          value: confession.status === 'approved' ? 'Đã duyệt' : 'Đang chờ duyệt',
+          value:
+            confession.status === 'approved' ? 'Đã duyệt' : 'Đang chờ duyệt',
           inline: true,
         },
         {
@@ -1427,7 +1481,6 @@ async function handleDetail(interaction) {
 
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     console.log('📤 Đã gửi detail embed cho người dùng');
-
   } catch (error) {
     console.error('❌ Lỗi khi xử lý detail command:', error);
     throw error;
