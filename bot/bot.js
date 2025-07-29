@@ -726,6 +726,9 @@ async function handleReplyModalSubmit(interaction) {
 }
 
 async function handleApprovalButtons(interaction) {
+  // Defer trả lời để có thêm thời gian xử lý
+  await interaction.deferReply({ ephemeral: true });
+
   console.log('✅ Đang xử lý approval button interaction');
 
   if (!(await checkAdminPermission(interaction))) {
@@ -747,22 +750,21 @@ async function handleApprovalButtons(interaction) {
 
     if (!confession) {
       console.log('❌ Không tìm thấy confession');
-      await interaction.reply({
+      // Dùng followUp vì đã defer
+      return await interaction.followUp({
         content: '❌ Confession không tồn tại!',
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
-      return;
     }
 
     console.log(`📊 Đã tìm thấy confession với status: ${confession.status}`);
 
     if (confession.status !== 'pending') {
       console.log('⚠️ Confession đã được xử lý');
-      await interaction.reply({
+      return await interaction.followUp({
         content: '❌ Confession này đã được xử lý!',
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
-      return;
     }
 
     if (action === 'approve') {
@@ -774,42 +776,75 @@ async function handleApprovalButtons(interaction) {
       });
 
       console.log(`🔍 Đang lấy forum channel: ${settings.forum_channel_id}`);
-      const forumChannel = client.channels.cache.get(settings.forum_channel_id);
+      const forumChannel = interaction.client.channels.cache.get(
+        settings.forum_channel_id
+      );
 
       if (!forumChannel) {
         console.log('❌ Không tìm thấy forum channel');
-        await interaction.reply({
+        return await interaction.followUp({
           content: '❌ Không tìm thấy forum channel!',
-          flags: MessageFlags.Ephemeral,
+          ephemeral: true,
         });
-        return;
       }
 
       console.log(`✅ Đã tìm thấy forum channel: ${forumChannel.name}`);
 
       let fullContent = confession.content;
+      const user = await interaction.client.users.fetch(confession.user_id);
 
-      console.log('🧵 Đang tạo confession thread...');
-      const user = await client.users.fetch(confession.user_id);
-      const thread = await forumChannel.threads.create({
-        name: `Confession #${confession.confession_id}`,
-        message: {
-          embeds: [
-            {
-              description:
-                fullContent.length > 4096
-                  ? fullContent.substring(0, 4093) + '...'
-                  : fullContent,
-              color: 1357990,
-              footer: {
-                text: `Confession #${confession.confession_id} • ${
-                  confession.anonymous ? 'Ẩn danh' : `Từ @${user.username}`
-                }`,
-              },
-            },
-          ],
-        },
-      });
+      const suffix = '\n\n*Đọc tiếp bên dưới...*';
+      const maxLength = 2000;
+      const buffer = 50; // buffer an toàn để tránh vượt quá 2000 ký tự
+      const allowedLength = maxLength - suffix.length - buffer;
+
+      let thread;
+      let isLongContent = fullContent.length > allowedLength;
+
+      if (!isLongContent) {
+        // Nội dung ngắn - gộp footer luôn
+        let contentWithFooter = !confession.anonymous
+          ? `${fullContent}\n\n━━━━━━━━━━━━━━━━━━━━\nConfession #${confession.confession_id} • Từ __@${user.username}__\n━━━━━━━━━━━━━━━━━━━━`
+          : `${fullContent}\n\n━━━━━━━━━━━━━━━━━━━━\nConfession #${confession.confession_id} • Ẩn danh\n━━━━━━━━━━━━━━━━━━━━`;
+
+        thread = await forumChannel.threads.create({
+          name: `Confession #${confession.confession_id}`,
+          message: {
+            content: contentWithFooter,
+          },
+        });
+      } else {
+        // Nội dung dài - chia làm 3 phần:
+        // phần đầu + suffix "Đọc tiếp", phần còn lại chia message nhỏ, footer riêng
+        const firstPart = fullContent.substring(0, allowedLength) + suffix;
+
+        thread = await forumChannel.threads.create({
+          name: `Confession #${confession.confession_id}`,
+          message: { content: firstPart },
+        });
+
+        // Gửi phần còn lại chia nhỏ từng chunk <= 2000 ký tự
+        let remaining = fullContent.substring(allowedLength);
+        const MAX_CHUNK_SIZE = 2000;
+        while (remaining.length > 0) {
+          const chunk =
+            remaining.length > MAX_CHUNK_SIZE
+              ? remaining.substring(0, MAX_CHUNK_SIZE)
+              : remaining;
+
+          await thread.send({ content: chunk });
+          remaining = remaining.substring(chunk.length);
+        }
+
+        // Gửi footer cuối cùng
+        await thread.send({
+          content: `━━━━━━━━━━━━━━━━━━━━\nConfession #${
+            confession.confession_id
+          } • ${
+            confession.anonymous ? 'Ẩn danh' : `Từ __@${user.username}__`
+          }\n━━━━━━━━━━━━━━━━━━━━`,
+        });
+      }
 
       console.log(`✅ Đã tạo thread: ${thread.name} (${thread.id})`);
 
@@ -825,8 +860,7 @@ async function handleApprovalButtons(interaction) {
 
       // Gửi message với button trả lời ẩn danh
       const replyMessage = await thread.send({
-        content:
-          '**🎩 Nếu bạn muốn gửi ẩn danh tới tác giả, ấn vào nút bên dưới.**',
+        content: '',
         components: [replyRow],
       });
 
@@ -839,9 +873,10 @@ async function handleApprovalButtons(interaction) {
 
       console.log('✅ Đã cập nhật status confession thành approved');
 
-      await interaction.reply({
+      // Trả lời interaction (sau defer thì dùng followUp)
+      await interaction.followUp({
         content: '✅ Đã duyệt và đăng confession lên forum.',
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
 
       console.log('📤 Đã gửi xác nhận approval');
@@ -849,7 +884,6 @@ async function handleApprovalButtons(interaction) {
       // Notify user
       console.log('📧 Đang cố gắng thông báo người dùng qua DM...');
       try {
-        const user = await client.users.fetch(confession.user_id);
         await user.send(
           `📢 Confession #${confession.confession_id} của bạn đã được admin duyệt và đăng công khai.`
         );
@@ -868,9 +902,9 @@ async function handleApprovalButtons(interaction) {
 
       console.log('✅ Đã xóa confession khỏi database');
 
-      await interaction.reply({
+      await interaction.followUp({
         content: '🗑️ Confession đã bị từ chối và xóa khỏi hệ thống.',
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
 
       console.log('📤 Đã gửi xác nhận rejection');
@@ -878,7 +912,7 @@ async function handleApprovalButtons(interaction) {
       // Notify user
       console.log('📧 Đang cố gắng thông báo người dùng qua DM...');
       try {
-        const user = await client.users.fetch(confession.user_id);
+        const user = await interaction.client.users.fetch(confession.user_id);
         await user.send(
           `❌ Confession #${confession.confession_id} của bạn đã bị admin từ chối.`
         );
@@ -889,7 +923,31 @@ async function handleApprovalButtons(interaction) {
     }
   } catch (error) {
     console.error('❌ Lỗi khi xử lý approval button:', error);
-    throw error;
+
+    // Trả lời lỗi (nếu interaction đã được defer)
+    if (interaction.deferred || interaction.replied) {
+      try {
+        await interaction.followUp({
+          content:
+            '❌ Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.',
+          ephemeral: true,
+        });
+      } catch (e) {
+        console.error('❌ Lỗi khi gửi followUp lỗi:', e);
+      }
+    } else {
+      try {
+        await interaction.reply({
+          content:
+            '❌ Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.',
+          ephemeral: true,
+        });
+      } catch (e) {
+        console.error('❌ Lỗi khi gửi reply lỗi:', e);
+      }
+    }
+
+    throw error; // hoặc bỏ dòng này nếu muốn dọn sạch log
   }
 }
 
@@ -1204,113 +1262,142 @@ async function handlePaginationButtons(interaction) {
 }
 
 async function handleApprove(interaction) {
-  console.log('✅ Đang xử lý manual approve command');
+  await interaction.deferReply({ ephemeral: true });
 
-  if (!(await checkAdminPermission(interaction))) return;
+  console.log('✅ Đang xử lý lệnh approve');
 
+  // Lấy confessionId integer từ option slash command
   const confessionId = interaction.options.getInteger('confession_id');
-  console.log(`📊 Manual approve cho confession ID: ${confessionId}`);
+
+  if (!confessionId || isNaN(confessionId)) {
+    return await interaction.followUp({
+      content: '❌ ID confession không hợp lệ, vui lòng nhập số đúng.',
+      ephemeral: true,
+    });
+  }
 
   try {
-    console.log('🔍 Đang tìm kiếm confession trong database...');
+    // Tìm confession trong db
     const confession = await Confession.findOne({
       confession_id: confessionId,
       guild_id: interaction.guildId,
-      status: 'pending',
     });
 
     if (!confession) {
-      console.log('❌ Không tìm thấy confession hoặc đã được xử lý');
-      await interaction.reply({
-        content: '❌ Không tìm thấy confession với ID này hoặc đã được xử lý.',
-        flags: MessageFlags.Ephemeral,
+      return await interaction.followUp({
+        content: '❌ Confession không tồn tại!',
+        ephemeral: true,
       });
-      return;
     }
 
-    console.log(`✅ Đã tìm thấy confession: ${confession._id}`);
+    if (confession.status !== 'pending') {
+      return await interaction.followUp({
+        content: '❌ Confession này đã được xử lý!',
+        ephemeral: true,
+      });
+    }
 
-    console.log('🔍 Đang lấy guild settings...');
+    // Lấy cấu hình guild
     const settings = await GuildSettings.findOne({
       guild_id: interaction.guildId,
     });
 
-    console.log(`🔍 Đang lấy forum channel: ${settings.forum_channel_id}`);
-    const forumChannel = client.channels.cache.get(settings.forum_channel_id);
+    const forumChannel = interaction.client.channels.cache.get(
+      settings.forum_channel_id
+    );
 
     if (!forumChannel) {
-      console.log('❌ Không tìm thấy forum channel');
-      await interaction.reply({
+      return await interaction.followUp({
         content: '❌ Không tìm thấy forum channel!',
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
-      return;
     }
 
-    console.log(`✅ Đã tìm thấy forum channel: ${forumChannel.name}`);
-
     let fullContent = confession.content;
+    const user = await interaction.client.users.fetch(confession.user_id);
 
-    console.log('🧵 Đang tạo confession thread...');
-    const user = await client.users.fetch(confession.user_id);
-    const thread = await forumChannel.threads.create({
-      name: `Confession #${confession.confession_id}`,
-      message: {
-        embeds: [
-          {
-            description:
-              fullContent.length > 4096
-                ? fullContent.substring(0, 4093) + '...'
-                : fullContent,
-            color: 1357990,
-            footer: {
-              text: `Confession #${confession.confession_id} • ${
-                confession.anonymous ? 'Ẩn danh' : `Từ @${user.username}`
-              }`,
-            },
-          },
-        ],
-      },
-    });
+    const suffix = '\n\n*Đọc tiếp bên dưới...*';
+    const maxLength = 2000;
+    const buffer = 50; // buffer an toàn
+    const allowedLength = maxLength - suffix.length - buffer;
+
+    let thread;
+    const isLongContent = fullContent.length > allowedLength;
+
+    if (!isLongContent) {
+      // Confession ngắn, gộp footer luôn
+      const contentWithFooter = !confession.anonymous
+        ? `${fullContent}\n\n━━━━━━━━━━━━━━━━━━━━\nConfession #${confession.confession_id} • Từ __@${user.username}__\n━━━━━━━━━━━━━━━━━━━━`
+        : `${fullContent}\n\n━━━━━━━━━━━━━━━━━━━━\nConfession #${confession.confession_id} • Ẩn danh\n━━━━━━━━━━━━━━━━━━━━`;
+
+      thread = await forumChannel.threads.create({
+        name: `Confession #${confession.confession_id}`,
+        message: { content: contentWithFooter },
+      });
+    } else {
+      // Confession dài, tách phần đầu + suffix, phần sau chia nhỏ
+      const firstPart = fullContent.substring(0, allowedLength) + suffix;
+      thread = await forumChannel.threads.create({
+        name: `Confession #${confession.confession_id}`,
+        message: { content: firstPart },
+      });
+
+      let remaining = fullContent.substring(allowedLength);
+      const MAX_CHUNK_SIZE = 2000;
+
+      while (remaining.length > 0) {
+        const chunk =
+          remaining.length > MAX_CHUNK_SIZE
+            ? remaining.substring(0, MAX_CHUNK_SIZE)
+            : remaining;
+
+        await thread.send({ content: chunk });
+        remaining = remaining.substring(chunk.length);
+      }
+
+      // Gửi footer cuối cùng
+      await thread.send({
+        content: `━━━━━━━━━━━━━━━━━━━━\nConfession #${
+          confession.confession_id
+        } • ${
+          confession.anonymous ? 'Ẩn danh' : `Từ __@${user.username}__`
+        }\n━━━━━━━━━━━━━━━━━━━━`,
+      });
+    }
 
     console.log(`✅ Đã tạo thread: ${thread.name} (${thread.id})`);
 
-    // Tạo button trả lời ẩn danh
-    console.log('🔘 Đang thêm anonymous reply button...');
+    // Tạo button trả lời ẩn danh giống handleApprovalButtons
     const replyRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId(`anonymous_reply_${confession.confession_id}`)
-        .setLabel('💬 Trả lời ẩn danh')
+        .setLabel('Trả lời ẩn danh')
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji('🔒')
+        .setEmoji('💬')
     );
 
-    // Gửi message với button trả lời ẩn danh
-    const replyMessage = await thread.send({
-      content: '👆 Ấn vào nút bên dưới để trả lời ẩn danh cho confession này.',
+    await thread.send({
+      content: '',
       components: [replyRow],
     });
 
-    console.log(`✅ Đã thêm reply button: ${replyMessage.id}`);
+    console.log('🔘 Đã thêm nút reply ẩn danh');
 
-    console.log('💾 Đang cập nhật status confession trong database...');
+    // Cập nhật trạng thái confession
     confession.status = 'approved';
     confession.thread_id = thread.id;
     await confession.save();
 
-    console.log('✅ Đã cập nhật status confession thành approved');
+    console.log('✅ Đã cập nhật trạng thái confession thành approved');
 
-    await interaction.reply({
-      content: `✅ Đã duyệt confession #${confessionId} và đăng lên forum!`,
-      flags: MessageFlags.Ephemeral,
+    // Trả lời interaction (dùng followUp vì đã deferReply)
+    await interaction.followUp({
+      content: '✅ Đã duyệt và đăng confession lên forum.',
+      ephemeral: true,
     });
 
-    console.log('📤 Đã gửi xác nhận manual approval');
-
-    // Notify user
-    console.log('📧 Đang cố gắng thông báo người dùng qua DM...');
+    // Thông báo cho user
     try {
-      const user = await client.users.fetch(confession.user_id);
       await user.send(
         `📢 Confession #${confession.confession_id} của bạn đã được admin duyệt và đăng công khai.`
       );
@@ -1319,8 +1406,29 @@ async function handleApprove(interaction) {
       console.log('❌ Không thể gửi DM cho người dùng:', error.message);
     }
   } catch (error) {
-    console.error('❌ Lỗi khi xử lý manual approval:', error);
-    throw error;
+    console.error('❌ Lỗi khi xử lý approve command:', error);
+
+    if (interaction.deferred || interaction.replied) {
+      try {
+        await interaction.followUp({
+          content:
+            '❌ Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.',
+          ephemeral: true,
+        });
+      } catch (e) {
+        console.error('❌ Lỗi khi gửi followUp lỗi:', e);
+      }
+    } else {
+      try {
+        await interaction.reply({
+          content:
+            '❌ Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.',
+          ephemeral: true,
+        });
+      } catch (e) {
+        console.error('❌ Lỗi khi gửi reply lỗi:', e);
+      }
+    }
   }
 }
 
