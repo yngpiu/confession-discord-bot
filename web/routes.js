@@ -11,7 +11,9 @@ function setupRoutes(app, client) {
     console.log(`  Timestamp: ${new Date().toISOString()}`);
 
     const clientId = process.env.CLIENT_ID;
-    console.log(`🔑 Client ID: ${clientId ? 'Đã thiết lập' : 'Chưa thiết lập'}`);
+    console.log(
+      `🔑 Client ID: ${clientId ? 'Đã thiết lập' : 'Chưa thiết lập'}`
+    );
 
     const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&permissions=326417787968&scope=bot%20applications.commands`;
 
@@ -63,14 +65,11 @@ function setupRoutes(app, client) {
 
     let totalUsers = 0;
     try {
-      totalUsers = client.guilds.cache.reduce(
-        (acc, guild) => {
-          const memberCount = guild.memberCount || 0;
-          console.log(`  Guild "${guild.name}": ${memberCount} thành viên`);
-          return acc + memberCount;
-        },
-        0
-      );
+      totalUsers = client.guilds.cache.reduce((acc, guild) => {
+        const memberCount = guild.memberCount || 0;
+        console.log(`  Guild "${guild.name}": ${memberCount} thành viên`);
+        return acc + memberCount;
+      }, 0);
       console.log(`  Tổng người dùng trên tất cả guilds: ${totalUsers}`);
     } catch (error) {
       console.error('⚠️ Lỗi khi tính tổng người dùng:', error);
@@ -108,7 +107,7 @@ function setupRoutes(app, client) {
     res.status(404).json({
       error: 'Route not found',
       requested: req.originalUrl,
-      method: req.method
+      method: req.method,
     });
 
     console.log('📤 Đã gửi 404 response');
