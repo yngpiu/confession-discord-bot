@@ -600,7 +600,7 @@ async function handleConfessionModalSubmit(interaction) {
           },
           {
             name: 'Người gửi',
-            value: `<@${interaction.user.id}>`,
+            value: isAnonymous ? '🔒 Ẩn danh' : `<@${interaction.user.id}>`,
             inline: false,
           }
         );
@@ -1017,7 +1017,9 @@ async function showConfessionList(interaction, status, page = 0) {
       for (const confession of confessions) {
         const statusIcon = confession.status === 'approved' ? '✅' : '⏳';
         const anonymousStatus = confession.anonymous ? 'Có' : 'Không';
-        const userTag = `<@${confession.user_id}>`;
+        const userDisplay = confession.anonymous
+          ? '🔒 Ẩn danh'
+          : `<@${confession.user_id}>`;
         const contentPreview =
           confession.content.length > 100
             ? confession.content.substring(0, 100) + '...'
@@ -1036,7 +1038,7 @@ async function showConfessionList(interaction, status, page = 0) {
 
         embed.addFields({
           name: `${statusIcon} Confession #${confession.confession_id}`,
-          value: `**Ẩn danh:** ${anonymousStatus}\n**Người gửi:** ${userTag}\n**Thời gian:** ${formattedTime}\n**Nội dung:** ${contentPreview}`,
+          value: `**Ẩn danh:** ${anonymousStatus}\n**Người gửi:** ${userDisplay}\n**Thời gian:** ${formattedTime}\n**Nội dung:** ${contentPreview}`,
           inline: false,
         });
       }
@@ -1449,11 +1451,6 @@ async function handleDetail(interaction) {
           inline: true,
         },
         {
-          name: 'Người gửi',
-          value: `<@${confession.user_id}>`,
-          inline: true,
-        },
-        {
           name: 'Trạng thái',
           value:
             confession.status === 'approved' ? 'Đã duyệt' : 'Đang chờ duyệt',
@@ -1465,6 +1462,15 @@ async function handleDetail(interaction) {
           inline: false,
         }
       );
+
+    // Chỉ hiển thị người gửi nếu không phải ẩn danh (cho admin xem)
+    if (!confession.anonymous) {
+      embed.addFields({
+        name: 'Người gửi',
+        value: `<@${confession.user_id}>`,
+        inline: true,
+      });
+    }
 
     if (confession.status === 'approved' && confession.thread_id) {
       console.log(`📎 Đang thêm link thread: ${confession.thread_id}`);
