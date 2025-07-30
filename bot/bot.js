@@ -783,14 +783,19 @@ async function createConfessionThread(forumChannel, confession, user) {
   const isLongContent = fullContent.length > allowedLength;
 
   if (!isLongContent) {
-    // Confession ngắn - gộp footer luôn
-    const contentWithFooter = !confession.anonymous
-      ? `${fullContent}\n\n━━━━━━━━━━━━━━━━━━━━\nConfession #${confession.confession_id} • Từ __@${user.username}__\n━━━━━━━━━━━━━━━━━━━━`
-      : `${fullContent}\n\n━━━━━━━━━━━━━━━━━━━━\nConfession #${confession.confession_id} • Ẩn danh\n━━━━━━━━━━━━━━━━━━━━`;
+    // Confession ngắn - tạo embed riêng cho credit
+    const creditEmbed = new EmbedBuilder().setColor(0x2b2d31).setFooter({
+      text: confession.anonymous
+        ? `Confession #${confession.confession_id} • Ẩn danh`
+        : `Confession #${confession.confession_id} • Từ @${user.username}`,
+    });
 
     return await forumChannel.threads.create({
       name: `Confession #${confession.confession_id}`,
-      message: { content: contentWithFooter },
+      message: {
+        content: fullContent,
+        embeds: [creditEmbed],
+      },
     });
   } else {
     // Confession dài - chia thành nhiều tin nhắn
@@ -815,13 +820,15 @@ async function createConfessionThread(forumChannel, confession, user) {
       remaining = remaining.substring(chunk.length);
     }
 
-    // Gửi footer cuối cùng
+    // Gửi footer cuối cùng dạng embed
+    const creditEmbed = new EmbedBuilder().setColor(0x2b2d31).setFooter({
+      text: confession.anonymous
+        ? `Confession #${confession.confession_id} • Ẩn danh`
+        : `Confession #${confession.confession_id} • Từ @${user.username}`,
+    });
+
     await thread.send({
-      content: `━━━━━━━━━━━━━━━━━━━━\nConfession #${
-        confession.confession_id
-      } • ${
-        confession.anonymous ? 'Ẩn danh' : `Từ __@${user.username}__`
-      }\n━━━━━━━━━━━━━━━━━━━━`,
+      embeds: [creditEmbed],
     });
 
     return thread;
