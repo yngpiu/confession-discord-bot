@@ -371,8 +371,7 @@ async function handleCreateGuide(interaction) {
     const thread = await forumChannel.threads.create({
       name: '💌 GỬI CONFESSION TẠI ĐÂY! 💌',
       message: {
-        content:
-          'Chọn 1 trong 2 nút dưới để gửi confession nha. Bot sẽ gửi tin nhắn riêng thông báo cho bạn khi confession được duyệt.',
+        content: 'Hãy đọc kỹ hướng dẫn trước khi sử dụng.\n\n',
         embeds: [embed],
         components: [row],
       },
@@ -400,7 +399,7 @@ async function handleButtonInteraction(interaction) {
   if (customId === 'send_named' || customId === 'send_anonymous') {
     await handleConfessionButtons(interaction);
   }
-  // Xử lý nút trả lời ẩn danh
+  // Xử lý nút Bình luận ẩn danh
   else if (customId.startsWith('anonymous_reply_')) {
     await handleAnonymousReply(interaction);
   }
@@ -422,14 +421,15 @@ async function handleConfessionButtons(interaction) {
 
   const modal = new ModalBuilder()
     .setCustomId(`confession_modal_${isAnonymous ? 'anon' : 'named'}`)
-    .setTitle('📨 Gửi Confession');
+    .setTitle('Gửi Confession');
 
   const contentInput = new TextInputBuilder()
     .setCustomId('confession_content')
     .setLabel('Nội dung confession')
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
-    .setMaxLength(4000);
+    .setMaxLength(4000)
+    .setPlaceholder('Nhập nội dung confession của bạn...');
 
   const actionRow = new ActionRowBuilder().addComponents(contentInput);
   modal.addComponents(actionRow);
@@ -438,22 +438,22 @@ async function handleConfessionButtons(interaction) {
 }
 
 /**
- * Xử lý nút trả lời ẩn danh - hiển thị modal để nhập nội dung trả lời
+ * Xử lý nút Bình luận ẩn danh - hiển thị modal để nhập nội dung trả lời
  */
 async function handleAnonymousReply(interaction) {
   const confessionId = interaction.customId.split('_')[2];
 
   const modal = new ModalBuilder()
     .setCustomId(`reply_modal_${confessionId}`)
-    .setTitle(`💬 Trả lời ẩn danh cho Confession #${confessionId}`);
+    .setTitle(`Bình luận ẩn danh`);
 
   const contentInput = new TextInputBuilder()
     .setCustomId('reply_content')
-    .setLabel('Nội Dung Trả Lời')
+    .setLabel('Nội dung bình luận')
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
     .setMaxLength(2000)
-    .setPlaceholder('Nhập nội dung trả lời của bạn...');
+    .setPlaceholder('Nhập nội dung bình luận của bạn...');
 
   const actionRow = new ActionRowBuilder().addComponents(contentInput);
   modal.addComponents(actionRow);
@@ -574,11 +574,7 @@ async function handleConfessionModalSubmit(interaction) {
     } catch (error) {
       // Không thể gửi DM - có thể user tắt DM
       await interaction.followUp({
-        content:
-          '⚠️ **Bot không thể gửi tin nhắn riêng cho bạn!**\n\n' +
-          'Vui lòng bật **tin nhắn trực tiếp từ server** để nhận thông báo khi confession được duyệt.\n\n' +
-          `✅ Confession #${confessionNumber} đã được gửi thành công!\n` +
-          '💡 Sau khi bật DM, bạn sẽ nhận được thông báo khi confession được duyệt.',
+        content: `✅ Đã gửi confession #${confessionNumber} thành công! \n\n __Bật DM để nhận thông báo duyệt.__`,
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -589,7 +585,7 @@ async function handleConfessionModalSubmit(interaction) {
 }
 
 /**
- * Xử lý trả lời ẩn danh - gửi tin nhắn vào thread confession
+ * Xử lý Bình luận ẩn danh - gửi tin nhắn vào thread confession
  */
 async function handleReplyModalSubmit(interaction) {
   const confessionId = interaction.customId.split('_')[2];
@@ -621,7 +617,7 @@ async function handleReplyModalSubmit(interaction) {
       return;
     }
 
-    // Tạo embed cho trả lời ẩn danh
+    // Tạo embed cho Bình luận ẩn danh
     const replyEmbed = new EmbedBuilder()
       .setDescription(`**Gửi ẩn danh tới tác giả:**\n${replyContent}`)
       .setColor(0x36393f);
@@ -706,11 +702,11 @@ async function approveConfession(interaction, confession) {
   const user = await interaction.client.users.fetch(confession.user_id);
   const thread = await createConfessionThread(forumChannel, confession, user);
 
-  // Thêm nút trả lời ẩn danh
+  // Thêm nút Bình luận ẩn danh
   const replyRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`anonymous_reply_${confession.confession_id}`)
-      .setLabel('Trả lời ẩn danh')
+      .setLabel('Bình luận ẩn danh')
       .setStyle(ButtonStyle.Secondary)
       .setEmoji('💬')
   );
