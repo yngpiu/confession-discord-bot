@@ -86,9 +86,17 @@ async function registerCommands() {
       .addChannelOption((option) =>
         option
           .setName('forum_channel')
-          .setDescription('Forum channel để đăng confession')
+          .setDescription(
+            'Channel để đăng confession (forum hoặc text hoặc voice nếu muốn)'
+          )
           .setRequired(true)
-          .addChannelTypes(ChannelType.GuildForum)
+          // Loại này cho phép hầu hết các channel text-based hiện ra (Forum, Text, etc)
+          .addChannelTypes(
+            ChannelType.GuildText,
+            ChannelType.GuildAnnouncement,
+            ChannelType.GuildForum,
+            ChannelType.GuildVoice // Nếu bạn muốn cho phép chọn voice cũng được (thường không cần)
+          )
       )
       .addChannelOption((option) =>
         option
@@ -191,7 +199,7 @@ async function handleSlashCommand(interaction) {
     case 'config':
       await handleConfig(interaction);
       break;
-    case 'tao-huong-dan':
+    case 'create-guide':
       await handleCreateGuide(interaction);
       break;
     case 'pending':
