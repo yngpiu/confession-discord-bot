@@ -237,18 +237,53 @@ async function handleSetup(interaction) {
   const adminChannel = interaction.options.getChannel('admin_channel');
   const adminRole = interaction.options.getRole('admin_role');
 
+  // Validate that we have a guild ID
+  if (!interaction.guildId) {
+    await interaction.reply({
+      content:
+        '❌ Lệnh này chỉ có thể sử dụng trong server, không thể sử dụng trong DM.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  console.log(
+    `🔧 Setting up bot for guild: ${interaction.guild?.name} (${interaction.guildId})`
+  );
+  console.log(
+    `📊 Channels: Forum=${forumChannel.id}, Admin=${adminChannel.id}, Role=${adminRole.id}`
+  );
+
   try {
-    // Lưu cấu hình vào database
-    await GuildSettings.findOneAndUpdate(
-      { guild_id: interaction.guildId },
-      {
+    // Check if guild settings already exist
+    const existingSettings = await GuildSettings.findOne({
+      guild_id: interaction.guildId,
+    });
+
+    if (existingSettings) {
+      console.log(
+        `🔄 Updating existing settings for guild ${interaction.guildId}`
+      );
+
+      // Update existing settings
+      existingSettings.forum_channel_id = forumChannel.id;
+      existingSettings.admin_channel_id = adminChannel.id;
+      existingSettings.admin_role_id = adminRole.id;
+
+      await existingSettings.save();
+    } else {
+      console.log(`✨ Creating new settings for guild ${interaction.guildId}`);
+
+      // Create new settings
+      const newSettings = new GuildSettings({
         guild_id: interaction.guildId,
         forum_channel_id: forumChannel.id,
         admin_channel_id: adminChannel.id,
         admin_role_id: adminRole.id,
-      },
-      { upsert: true, new: true }
-    );
+      });
+
+      await newSettings.save();
+    }
 
     console.log(`✅ Setup completed for guild: ${interaction.guild.name}`);
 
@@ -258,6 +293,23 @@ async function handleSetup(interaction) {
     });
   } catch (error) {
     console.error('❌ Setup failed:', error);
+
+    // Handle duplicate key error specifically
+    if (error.code === 11000) {
+      console.error('❌ Duplicate key error details:', {
+        keyPattern: error.keyPattern,
+        keyValue: error.keyValue,
+        collection: error.collection,
+      });
+
+      await interaction.reply({
+        content:
+          '❌ Có lỗi xảy ra với cơ sở dữ liệu. Vui lòng thử lại sau hoặc liên hệ admin để khắc phục.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
     throw error;
   }
 }
@@ -765,9 +817,30 @@ async function rejectConfession(interaction, confession) {
   }
 }
 
+function findCutPosition(text, maxLength) {
+  let cut = text.lastIndexOf('\n', maxLength);
+  if (cut >= maxLength * 0.75) return cut;
+
+  cut = text.lastIndexOf('.', maxLength);
+  if (cut >= maxLength * 0.75) return cut + 1;
+
+  cut = text.lastIndexOf('!', maxLength);
+  if (cut >= maxLength * 0.75) return cut + 1;
+
+  cut = text.lastIndexOf('?', maxLength);
+  if (cut >= maxLength * 0.75) return cut + 1;
+
+  cut = text.lastIndexOf(' ', maxLength);
+  if (cut > 0) return cut;
+
+  return maxLength;
+}
 /**
  * Tạo thread trong forum cho confession đã được duyệt
  * Xử lý cả confession ngắn và dài (>2000 ký tự)
+ */
+/**
+ * Hàm tạo thread cho confession, cắt đoạn "Đọc tiếp bên dưới..."
  */
 async function createConfessionThread(forumChannel, confession, user) {
   const fullContent = confession.content;
@@ -776,10 +849,7 @@ async function createConfessionThread(forumChannel, confession, user) {
   const buffer = 50;
   const allowedLength = maxLength - suffix.length - buffer;
 
-  const isLongContent = fullContent.length > allowedLength;
-
-  if (!isLongContent) {
-    // Confession ngắn - tạo embed riêng cho credit
+  if (fullContent.length <= allowedLength) {
     const creditEmbed = new EmbedBuilder().setColor(0x2b2d31).setFooter({
       text: confession.anonymous
         ? `Confession #${confession.confession_id} • Ẩn danh`
@@ -793,42 +863,38 @@ async function createConfessionThread(forumChannel, confession, user) {
         embeds: [creditEmbed],
       },
     });
-  } else {
-    // Confession dài - chia thành nhiều tin nhắn
-    const firstPart = fullContent.substring(0, allowedLength) + suffix;
-
-    const thread = await forumChannel.threads.create({
-      name: `Confession #${confession.confession_id}`,
-      message: { content: firstPart },
-    });
-
-    // Gửi phần còn lại
-    let remaining = fullContent.substring(allowedLength);
-    const MAX_CHUNK_SIZE = 2000;
-
-    while (remaining.length > 0) {
-      const chunk =
-        remaining.length > MAX_CHUNK_SIZE
-          ? remaining.substring(0, MAX_CHUNK_SIZE)
-          : remaining;
-
-      await thread.send({ content: chunk });
-      remaining = remaining.substring(chunk.length);
-    }
-
-    // Gửi footer cuối cùng dạng embed
-    const creditEmbed = new EmbedBuilder().setColor(0x2b2d31).setFooter({
-      text: confession.anonymous
-        ? `Confession #${confession.confession_id} • Ẩn danh`
-        : `Confession #${confession.confession_id} • Từ @${user.username}`,
-    });
-
-    await thread.send({
-      embeds: [creditEmbed],
-    });
-
-    return thread;
   }
+
+  // Confession dài, cắt đoạn đọc tiếp
+  const cutPos = findCutPosition(fullContent, allowedLength);
+  const firstPart = fullContent.substring(0, cutPos).trim() + suffix;
+
+  const thread = await forumChannel.threads.create({
+    name: `Confession #${confession.confession_id}`,
+    message: { content: firstPart },
+  });
+
+  let remaining = fullContent.substring(cutPos).trim();
+  const MAX_CHUNK_SIZE = 2000;
+
+  while (remaining.length > 0) {
+    const chunk =
+      remaining.length > MAX_CHUNK_SIZE
+        ? remaining.substring(0, MAX_CHUNK_SIZE)
+        : remaining;
+    await thread.send({ content: chunk });
+    remaining = remaining.substring(chunk.length);
+  }
+
+  const creditEmbed = new EmbedBuilder().setColor(0x2b2d31).setFooter({
+    text: confession.anonymous
+      ? `Confession #${confession.confession_id} • Ẩn danh`
+      : `Confession #${confession.confession_id} • Từ @${user.username}`,
+  });
+
+  await thread.send({ embeds: [creditEmbed] });
+
+  return thread;
 }
 
 /**
