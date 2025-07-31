@@ -12,6 +12,7 @@ const {
   MessageFlags,
 } = require('discord.js');
 const { Confession, GuildSettings } = require('./models');
+const logger = require('./logger');
 
 let client;
 
@@ -20,13 +21,13 @@ let client;
  * @param {Client} discordClient - Discord client instance
  */
 async function initializeBot(discordClient) {
-  console.log('🤖 Initializing Discord Confession Bot...');
+  logger.init('Initializing Discord Confession Bot...');
   client = discordClient;
 
   // Event: Bot ready
   client.once('ready', async () => {
-    console.log(
-      `✅ Bot online: ${client.user.tag} | Guilds: ${client.guilds.cache.size}`
+    logger.success(
+      `Bot online: ${client.user.tag} | Guilds: ${client.guilds.cache.size}`
     );
     await registerCommands();
   });
@@ -41,10 +42,10 @@ async function initializeBot(discordClient) {
       ? 'modal'
       : 'unknown';
 
-    console.log(
-      `🎯 ${interactionType} from ${interaction.user.tag} in ${
-        interaction.guild?.name || 'DM'
-      }`
+    logger.user(
+      `${interactionType}`,
+      interaction.user.tag,
+      interaction.guild?.name || 'DM'
     );
 
     try {
@@ -56,7 +57,7 @@ async function initializeBot(discordClient) {
         await handleModalSubmit(interaction);
       }
     } catch (error) {
-      console.error(`❌ Error handling ${interactionType}:`, error);
+      logger.error(`Error handling ${interactionType}:`, error);
 
       const errorMessage = 'Có lỗi xảy ra khi xử lý lệnh!';
 
@@ -73,8 +74,8 @@ async function initializeBot(discordClient) {
           });
         }
       } catch (replyError) {
-        console.error(
-          `❌ Failed to send error message for ${interactionType}:`,
+        logger.error(
+          `Failed to send error message for ${interactionType}:`,
           replyError
         );
         // Prevent complete crash by not throwing the error
@@ -187,9 +188,9 @@ async function registerCommands() {
 
   try {
     await client.application.commands.set(commands);
-    console.log(`✅ Registered ${commands.length} slash commands`);
+    logger.success(`Registered ${commands.length} slash commands`);
   } catch (error) {
-    console.error('❌ Failed to register commands:', error);
+    logger.error('Failed to register commands:', error);
     throw error;
   }
 }
@@ -230,12 +231,10 @@ async function handleSlashCommand(interaction) {
       await handleDetail(interaction);
       break;
     default:
-      console.log(`⚠️ Unknown command: ${commandName}`);
+      logger.warn(`Unknown command: ${commandName}`);
   }
 
-  console.log(
-    `⏱️ Command ${commandName} executed in ${Date.now() - startTime}ms`
-  );
+  logger.timing(commandName, Date.now() - startTime);
 }
 
 /**
@@ -256,11 +255,13 @@ async function handleSetup(interaction) {
     return;
   }
 
-  console.log(
-    `🔧 Setting up bot for guild: ${interaction.guild?.name} (${interaction.guildId})`
+  logger.guild(
+    'Setting up bot',
+    interaction.guild?.name,
+    `(${interaction.guildId})`
   );
-  console.log(
-    `📊 Channels: Forum=${forumChannel.id}, Admin=${adminChannel.id}, Role=${adminRole.id}`
+  logger.config(
+    `Channels: Forum=${forumChannel.id}, Admin=${adminChannel.id}, Role=${adminRole.id}`
   );
 
   try {
@@ -270,8 +271,8 @@ async function handleSetup(interaction) {
     });
 
     if (existingSettings) {
-      console.log(
-        `🔄 Updating existing settings for guild ${interaction.guildId}`
+      logger.config(
+        `Updating existing settings for guild ${interaction.guildId}`
       );
 
       // Update existing settings
@@ -281,7 +282,7 @@ async function handleSetup(interaction) {
 
       await existingSettings.save();
     } else {
-      console.log(`✨ Creating new settings for guild ${interaction.guildId}`);
+      logger.config(`Creating new settings for guild ${interaction.guildId}`);
 
       // Create new settings
       const newSettings = new GuildSettings({
@@ -294,18 +295,18 @@ async function handleSetup(interaction) {
       await newSettings.save();
     }
 
-    console.log(`✅ Setup completed for guild: ${interaction.guild.name}`);
+    logger.success(`Setup completed for guild: ${interaction.guild.name}`);
 
     await interaction.reply({
       content: `✅ Đã cấu hình bot thành công!\nForum: ${forumChannel}\nAdmin Channel: ${adminChannel}\nAdmin Role: ${adminRole}`,
       flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
-    console.error('❌ Setup failed:', error);
+    logger.error('Setup failed:', error);
 
     // Handle duplicate key error specifically
     if (error.code === 11000) {
-      console.error('❌ Duplicate key error details:', {
+      logger.error('Duplicate key error details:', {
         keyPattern: error.keyPattern,
         keyValue: error.keyValue,
         collection: error.collection,
@@ -318,48 +319,48 @@ async function handleSetup(interaction) {
           flags: MessageFlags.Ephemeral,
         });
       } catch (replyError) {
-        console.error('❌ Failed to send error reply:', replyError);
+        logger.error('Failed to send error reply:', replyError);
       }
       return;
     }
 
     // Handle other database errors to prevent crash
     if (error.name === 'MongoError' || error.name === 'MongoServerError') {
-      console.error('❌ MongoDB error during setup:', error);
+      logger.error('MongoDB error during setup:', error);
       try {
         await interaction.reply({
           content: '❌ Lỗi kết nối cơ sở dữ liệu. Vui lòng thử lại sau.',
           flags: MessageFlags.Ephemeral,
         });
       } catch (replyError) {
-        console.error('❌ Failed to send MongoDB error reply:', replyError);
+        logger.error('Failed to send MongoDB error reply:', replyError);
       }
       return;
     }
 
     // Handle network/connection errors
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      console.error('❌ Network/Connection error during setup:', error);
+      logger.error('Network/Connection error during setup:', error);
       try {
         await interaction.reply({
           content: '❌ Lỗi kết nối. Vui lòng kiểm tra mạng và thử lại.',
           flags: MessageFlags.Ephemeral,
         });
       } catch (replyError) {
-        console.error('❌ Failed to send network error reply:', replyError);
+        logger.error('Failed to send network error reply:', replyError);
       }
       return;
     }
 
     // Generic error handling to prevent crash
-    console.error('❌ Unexpected error during setup:', error);
+    logger.error('Unexpected error during setup:', error);
     try {
       await interaction.reply({
         content: '❌ Có lỗi không xác định xảy ra. Vui lòng thử lại sau.',
         flags: MessageFlags.Ephemeral,
       });
     } catch (replyError) {
-      console.error('❌ Failed to send generic error reply:', replyError);
+      logger.error('Failed to send generic error reply:', replyError);
     }
   }
 }
@@ -407,7 +408,7 @@ async function handleConfig(interaction) {
 
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   } catch (error) {
-    console.error('❌ Failed to get config:', error);
+    logger.error('Failed to get config:', error);
 
     try {
       await interaction.reply({
@@ -415,7 +416,7 @@ async function handleConfig(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     } catch (replyError) {
-      console.error('❌ Failed to send config error reply:', replyError);
+      logger.error('Failed to send config error reply:', replyError);
     }
   }
 }
@@ -487,14 +488,14 @@ async function handleCreateGuide(interaction) {
       },
     });
 
-    console.log(`✅ Created guide thread: ${thread.name}`);
+    logger.thread('Created guide thread', thread.name);
 
     await interaction.reply({
       content: '✅ Đã tạo thread hướng dẫn gửi confession.',
       flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
-    console.error('❌ Failed to create guide thread:', error);
+    logger.error('Failed to create guide thread:', error);
 
     try {
       await interaction.reply({
@@ -502,7 +503,7 @@ async function handleCreateGuide(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     } catch (replyError) {
-      console.error('❌ Failed to send guide thread error reply:', replyError);
+      logger.error('Failed to send guide thread error reply:', replyError);
     }
   }
 }
@@ -597,10 +598,10 @@ async function handleConfessionModalSubmit(interaction) {
   const isAnonymous = interaction.customId.includes('anon');
   const content = interaction.fields.getTextInputValue('confession_content');
 
-  console.log(
-    `📨 New confession: ${isAnonymous ? 'Anonymous' : 'Named'} from ${
-      interaction.user.tag
-    }`
+  logger.confession(
+    `New submission: ${isAnonymous ? 'Anonymous' : 'Named'}`,
+    '',
+    `from ${interaction.user.tag}`
   );
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -640,7 +641,7 @@ async function handleConfessionModalSubmit(interaction) {
     });
 
     await confession.save();
-    console.log(`✅ Saved confession #${confessionNumber} to database`);
+    logger.database(`Saved confession #${confessionNumber} to database`);
 
     // Gửi đến admin channel để duyệt
     const adminChannel = client.channels.cache.get(settings.admin_channel_id);
@@ -697,7 +698,7 @@ async function handleConfessionModalSubmit(interaction) {
       });
     }
   } catch (error) {
-    console.error('❌ Failed to handle confession submission:', error);
+    logger.error('Failed to handle confession submission:', error);
 
     try {
       await interaction.followUp({
@@ -705,8 +706,8 @@ async function handleConfessionModalSubmit(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     } catch (replyError) {
-      console.error(
-        '❌ Failed to send confession submission error reply:',
+      logger.error(
+        'Failed to send confession submission error reply:',
         replyError
       );
     }
@@ -752,12 +753,12 @@ async function handleReplyModalSubmit(interaction) {
       .setColor(0x36393f);
 
     await thread.send({ embeds: [replyEmbed] });
-    console.log(`💬 Anonymous reply sent to confession #${confessionId}`);
+    logger.confession(`Anonymous reply sent`, confessionId);
 
     // Đóng modal mà không hiển thị gì
     await interaction.deferUpdate();
   } catch (error) {
-    console.error('❌ Failed to send anonymous reply:', error);
+    logger.error('Failed to send anonymous reply:', error);
     await interaction.reply({
       content: '❌ Có lỗi xảy ra khi gửi trả lời.',
       flags: MessageFlags.Ephemeral,
@@ -801,7 +802,7 @@ async function handleApprovalButtons(interaction) {
       await rejectConfession(interaction, confession);
     }
   } catch (error) {
-    console.error('❌ Error handling approval button:', error);
+    logger.error('Error handling approval button:', error);
     await interaction.followUp({
       content: '❌ Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.',
       ephemeral: true,
@@ -850,7 +851,7 @@ async function approveConfession(interaction, confession) {
   confession.thread_id = thread.id;
   await confession.save();
 
-  console.log(`✅ Approved confession #${confession.confession_id}`);
+  logger.confession('Approved', confession.confession_id);
 
   await interaction.followUp({
     content: '✅ Đã duyệt và đăng confession lên forum.',
@@ -863,7 +864,7 @@ async function approveConfession(interaction, confession) {
       `📢 Confession #${confession.confession_id} của bạn đã được admin duyệt và đăng công khai.`
     );
   } catch (error) {
-    console.log('❌ Cannot send DM to user');
+    logger.warn('Cannot send DM to user');
   }
 }
 
@@ -876,7 +877,7 @@ async function rejectConfession(interaction, confession) {
     guild_id: interaction.guildId,
   });
 
-  console.log(`🗑️ Rejected confession #${confession.confession_id}`);
+  logger.confession('Rejected', confession.confession_id);
 
   await interaction.followUp({
     content: '🗑️ Confession đã bị từ chối và xóa khỏi hệ thống.',
@@ -890,7 +891,7 @@ async function rejectConfession(interaction, confession) {
       `❌ Confession #${confession.confession_id} của bạn đã bị admin từ chối.`
     );
   } catch (error) {
-    console.log('❌ Cannot send DM to user');
+    logger.warn('Cannot send DM to user');
   }
 }
 
@@ -1001,7 +1002,7 @@ async function checkAdminPermission(interaction) {
 
     return true;
   } catch (error) {
-    console.error('❌ Error checking admin permission:', error);
+    logger.error('Error checking admin permission:', error);
 
     // Prevent crash by handling the error gracefully
     try {
@@ -1010,10 +1011,7 @@ async function checkAdminPermission(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     } catch (replyError) {
-      console.error(
-        '❌ Failed to send admin permission error reply:',
-        replyError
-      );
+      logger.error('Failed to send admin permission error reply:', replyError);
     }
 
     return false; // Return false instead of throwing to prevent crash
@@ -1140,7 +1138,7 @@ async function showConfessionList(interaction, status, page = 0) {
       flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
-    console.error('❌ Error showing confession list:', error);
+    logger.error('Error showing confession list:', error);
 
     try {
       await interaction.reply({
@@ -1149,10 +1147,7 @@ async function showConfessionList(interaction, status, page = 0) {
         flags: MessageFlags.Ephemeral,
       });
     } catch (replyError) {
-      console.error(
-        '❌ Failed to send confession list error reply:',
-        replyError
-      );
+      logger.error('Failed to send confession list error reply:', replyError);
     }
   }
 }
@@ -1258,7 +1253,7 @@ async function handlePaginationButtons(interaction) {
 
     await interaction.editReply({ embeds: [embed], components: [row] });
   } catch (error) {
-    console.error('❌ Error handling pagination:', error);
+    logger.error('Error handling pagination:', error);
 
     try {
       await interaction.editReply({
@@ -1266,7 +1261,7 @@ async function handlePaginationButtons(interaction) {
         components: [],
       });
     } catch (replyError) {
-      console.error('❌ Failed to send pagination error reply:', replyError);
+      logger.error('Failed to send pagination error reply:', replyError);
     }
   }
 }
@@ -1309,7 +1304,7 @@ async function handleApprove(interaction) {
     // Thực hiện duyệt confession
     await approveConfession(interaction, confession);
   } catch (error) {
-    console.error('❌ Error handling approve command:', error);
+    logger.error('Error handling approve command:', error);
     await interaction.followUp({
       content: '❌ Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.',
       ephemeral: true,
@@ -1345,10 +1340,10 @@ async function handleDelete(interaction) {
         const thread = await client.channels.fetch(confession.thread_id);
         if (thread) {
           await thread.delete();
-          console.log(`✅ Deleted thread for confession #${confessionId}`);
+          logger.thread(`Deleted thread for confession`, `#${confessionId}`);
         }
       } catch (error) {
-        console.log('⚠️ Thread already deleted or not found');
+        logger.warn('Thread already deleted or not found');
       }
     }
 
@@ -1358,7 +1353,7 @@ async function handleDelete(interaction) {
       guild_id: interaction.guildId,
     });
 
-    console.log(`🗑️ Deleted confession #${confessionId}`);
+    logger.confession('Deleted', confessionId);
 
     const statusMessage =
       confession.status === 'approved'
@@ -1377,10 +1372,10 @@ async function handleDelete(interaction) {
         `🗑️ Confession #${confessionId} của bạn đã bị admin xóa khỏi hệ thống.`
       );
     } catch (error) {
-      console.log('❌ Cannot send DM to user');
+      logger.warn('Cannot send DM to user');
     }
   } catch (error) {
-    console.error('❌ Error handling delete command:', error);
+    logger.error('Error handling delete command:', error);
 
     try {
       await interaction.reply({
@@ -1388,7 +1383,7 @@ async function handleDelete(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     } catch (replyError) {
-      console.error('❌ Failed to send delete error reply:', replyError);
+      logger.error('Failed to send delete error reply:', replyError);
     }
   }
 }
@@ -1466,7 +1461,7 @@ async function handleDetail(interaction) {
 
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   } catch (error) {
-    console.error('❌ Error handling detail command:', error);
+    logger.error('Error handling detail command:', error);
 
     try {
       await interaction.reply({
@@ -1474,7 +1469,7 @@ async function handleDetail(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     } catch (replyError) {
-      console.error('❌ Failed to send detail error reply:', replyError);
+      logger.error('Failed to send detail error reply:', replyError);
     }
   }
 }
