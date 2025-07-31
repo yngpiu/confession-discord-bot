@@ -770,7 +770,7 @@ async function handleReplyModalSubmit(interaction) {
  * Xử lý nút duyệt/từ chối confession
  */
 async function handleApprovalButtons(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   if (!(await checkAdminPermission(interaction))) return;
 
@@ -785,14 +785,14 @@ async function handleApprovalButtons(interaction) {
     if (!confession) {
       return await interaction.followUp({
         content: '❌ Confession không tồn tại!',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     if (confession.status !== 'pending') {
       return await interaction.followUp({
         content: '❌ Confession này đã được xử lý!',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -805,7 +805,7 @@ async function handleApprovalButtons(interaction) {
     logger.error('Error handling approval button:', error);
     await interaction.followUp({
       content: '❌ Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
@@ -825,7 +825,7 @@ async function approveConfession(interaction, confession) {
   if (!forumChannel) {
     return await interaction.followUp({
       content: '❌ Không tìm thấy forum channel!',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -855,7 +855,7 @@ async function approveConfession(interaction, confession) {
 
   await interaction.followUp({
     content: '✅ Đã duyệt và đăng confession lên forum.',
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   // Thông báo cho người dùng
@@ -881,7 +881,7 @@ async function rejectConfession(interaction, confession) {
 
   await interaction.followUp({
     content: '🗑️ Confession đã bị từ chối và xóa khỏi hệ thống.',
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 
   // Thông báo cho người dùng
@@ -1270,14 +1270,14 @@ async function handlePaginationButtons(interaction) {
  * Xử lý lệnh duyệt confession bằng ID
  */
 async function handleApprove(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const confessionId = interaction.options.getInteger('confession_id');
 
   if (!confessionId || isNaN(confessionId)) {
     return await interaction.followUp({
       content: '❌ ID confession không hợp lệ, vui lòng nhập số đúng.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -1290,14 +1290,14 @@ async function handleApprove(interaction) {
     if (!confession) {
       return await interaction.followUp({
         content: '❌ Confession không tồn tại!',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     if (confession.status !== 'pending') {
       return await interaction.followUp({
         content: '❌ Confession này đã được xử lý!',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -1307,7 +1307,7 @@ async function handleApprove(interaction) {
     logger.error('Error handling approve command:', error);
     await interaction.followUp({
       content: '❌ Có lỗi xảy ra trong quá trình xử lý. Vui lòng thử lại sau.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }
