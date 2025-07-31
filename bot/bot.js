@@ -56,19 +56,28 @@ async function initializeBot(discordClient) {
         await handleModalSubmit(interaction);
       }
     } catch (error) {
-      console.error(`❌ Error handling ${interactionType}:`, error.message);
+      console.error(`❌ Error handling ${interactionType}:`, error);
 
       const errorMessage = 'Có lỗi xảy ra khi xử lý lệnh!';
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({
-          content: errorMessage,
-          flags: MessageFlags.Ephemeral,
-        });
-      } else {
-        await interaction.reply({
-          content: errorMessage,
-          flags: MessageFlags.Ephemeral,
-        });
+
+      try {
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp({
+            content: errorMessage,
+            flags: MessageFlags.Ephemeral,
+          });
+        } else {
+          await interaction.reply({
+            content: errorMessage,
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch (replyError) {
+        console.error(
+          `❌ Failed to send error message for ${interactionType}:`,
+          replyError
+        );
+        // Prevent complete crash by not throwing the error
       }
     }
   });
@@ -302,15 +311,56 @@ async function handleSetup(interaction) {
         collection: error.collection,
       });
 
-      await interaction.reply({
-        content:
-          '❌ Có lỗi xảy ra với cơ sở dữ liệu. Vui lòng thử lại sau hoặc liên hệ admin để khắc phục.',
-        flags: MessageFlags.Ephemeral,
-      });
+      try {
+        await interaction.reply({
+          content:
+            '❌ Có lỗi xảy ra với cơ sở dữ liệu. Vui lòng thử lại sau hoặc liên hệ admin để khắc phục.',
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (replyError) {
+        console.error('❌ Failed to send error reply:', replyError);
+      }
       return;
     }
 
-    throw error;
+    // Handle other database errors to prevent crash
+    if (error.name === 'MongoError' || error.name === 'MongoServerError') {
+      console.error('❌ MongoDB error during setup:', error);
+      try {
+        await interaction.reply({
+          content: '❌ Lỗi kết nối cơ sở dữ liệu. Vui lòng thử lại sau.',
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (replyError) {
+        console.error('❌ Failed to send MongoDB error reply:', replyError);
+      }
+      return;
+    }
+
+    // Handle network/connection errors
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      console.error('❌ Network/Connection error during setup:', error);
+      try {
+        await interaction.reply({
+          content: '❌ Lỗi kết nối. Vui lòng kiểm tra mạng và thử lại.',
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (replyError) {
+        console.error('❌ Failed to send network error reply:', replyError);
+      }
+      return;
+    }
+
+    // Generic error handling to prevent crash
+    console.error('❌ Unexpected error during setup:', error);
+    try {
+      await interaction.reply({
+        content: '❌ Có lỗi không xác định xảy ra. Vui lòng thử lại sau.',
+        flags: MessageFlags.Ephemeral,
+      });
+    } catch (replyError) {
+      console.error('❌ Failed to send generic error reply:', replyError);
+    }
   }
 }
 
@@ -358,7 +408,15 @@ async function handleConfig(interaction) {
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   } catch (error) {
     console.error('❌ Failed to get config:', error);
-    throw error;
+
+    try {
+      await interaction.reply({
+        content: '❌ Lỗi khi lấy thông tin cấu hình. Vui lòng thử lại sau.',
+        flags: MessageFlags.Ephemeral,
+      });
+    } catch (replyError) {
+      console.error('❌ Failed to send config error reply:', replyError);
+    }
   }
 }
 
@@ -437,7 +495,15 @@ async function handleCreateGuide(interaction) {
     });
   } catch (error) {
     console.error('❌ Failed to create guide thread:', error);
-    throw error;
+
+    try {
+      await interaction.reply({
+        content: '❌ Lỗi khi tạo thread hướng dẫn. Vui lòng thử lại sau.',
+        flags: MessageFlags.Ephemeral,
+      });
+    } catch (replyError) {
+      console.error('❌ Failed to send guide thread error reply:', replyError);
+    }
   }
 }
 
@@ -632,7 +698,18 @@ async function handleConfessionModalSubmit(interaction) {
     }
   } catch (error) {
     console.error('❌ Failed to handle confession submission:', error);
-    throw error;
+
+    try {
+      await interaction.followUp({
+        content: '❌ Lỗi khi gửi confession. Vui lòng thử lại sau.',
+        flags: MessageFlags.Ephemeral,
+      });
+    } catch (replyError) {
+      console.error(
+        '❌ Failed to send confession submission error reply:',
+        replyError
+      );
+    }
   }
 }
 
@@ -925,7 +1002,21 @@ async function checkAdminPermission(interaction) {
     return true;
   } catch (error) {
     console.error('❌ Error checking admin permission:', error);
-    throw error;
+
+    // Prevent crash by handling the error gracefully
+    try {
+      await interaction.reply({
+        content: '❌ Lỗi kiểm tra quyền admin. Vui lòng thử lại sau.',
+        flags: MessageFlags.Ephemeral,
+      });
+    } catch (replyError) {
+      console.error(
+        '❌ Failed to send admin permission error reply:',
+        replyError
+      );
+    }
+
+    return false; // Return false instead of throwing to prevent crash
   }
 }
 
@@ -1050,7 +1141,19 @@ async function showConfessionList(interaction, status, page = 0) {
     });
   } catch (error) {
     console.error('❌ Error showing confession list:', error);
-    throw error;
+
+    try {
+      await interaction.reply({
+        content:
+          '❌ Lỗi khi hiển thị danh sách confession. Vui lòng thử lại sau.',
+        flags: MessageFlags.Ephemeral,
+      });
+    } catch (replyError) {
+      console.error(
+        '❌ Failed to send confession list error reply:',
+        replyError
+      );
+    }
   }
 }
 
@@ -1156,7 +1259,15 @@ async function handlePaginationButtons(interaction) {
     await interaction.editReply({ embeds: [embed], components: [row] });
   } catch (error) {
     console.error('❌ Error handling pagination:', error);
-    throw error;
+
+    try {
+      await interaction.editReply({
+        content: '❌ Lỗi khi chuyển trang. Vui lòng thử lại sau.',
+        components: [],
+      });
+    } catch (replyError) {
+      console.error('❌ Failed to send pagination error reply:', replyError);
+    }
   }
 }
 
@@ -1270,7 +1381,15 @@ async function handleDelete(interaction) {
     }
   } catch (error) {
     console.error('❌ Error handling delete command:', error);
-    throw error;
+
+    try {
+      await interaction.reply({
+        content: '❌ Lỗi khi xóa confession. Vui lòng thử lại sau.',
+        flags: MessageFlags.Ephemeral,
+      });
+    } catch (replyError) {
+      console.error('❌ Failed to send delete error reply:', replyError);
+    }
   }
 }
 
@@ -1348,7 +1467,15 @@ async function handleDetail(interaction) {
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   } catch (error) {
     console.error('❌ Error handling detail command:', error);
-    throw error;
+
+    try {
+      await interaction.reply({
+        content: '❌ Lỗi khi lấy chi tiết confession. Vui lòng thử lại sau.',
+        flags: MessageFlags.Ephemeral,
+      });
+    } catch (replyError) {
+      console.error('❌ Failed to send detail error reply:', replyError);
+    }
   }
 }
 
