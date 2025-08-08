@@ -4,8 +4,6 @@ const express = require('express');
 const path = require('path');
 const { Client, GatewayIntentBits } = require('discord.js');
 const mongoose = require('mongoose');
-const cron = require('node-cron'); // ➕ Thêm node-cron
-const axios = require('axios'); // ➕ Thêm axios
 
 // Import logger first to use it throughout the app
 const logger = require('./bot/logger');
@@ -97,81 +95,10 @@ logger.system(`Thư mục static files: ${path.join(__dirname, 'web/public')}`);
 app.use(express.json());
 logger.system('Đã bật JSON parser middleware');
 
-// ➕ Tạo endpoint ping để tự ping
-app.get('/ping', (req, res) => {
-  const timestamp = new Date().toISOString();
-  const botStatus = client.readyAt ? 'online' : 'offline';
-  const uptime = process.uptime();
-
-  logger.api(`Nhận được self-ping lúc ${timestamp}`);
-  logger.api(`Trạng thái bot: ${botStatus}`);
-  logger.api(`Thời gian hoạt động app: ${Math.floor(uptime)} giây`);
-
-  const response = {
-    status: 'alive',
-    bot_status: botStatus,
-    uptime: uptime,
-    timestamp: timestamp,
-  };
-
-  logger.api('Đang gửi ping response:', response);
-
-  res.status(200).json(response);
-});
-
-logger.system('Đã đăng ký ping endpoint tại /ping');
-
 // Setup routes
 logger.system('Đang thiết lập web routes...');
 setupRoutes(app, client);
 logger.success('Hoàn thành thiết lập web routes');
-
-// ➕ Self-ping scheduler - chỉ chạy khi production
-if (process.env.NODE_ENV === 'production') {
-  logger.system(
-    'Phát hiện môi trường production, đang thiết lập self-ping scheduler...'
-  );
-
-  const APP_URL =
-    process.env.RENDER_EXTERNAL_URL || `https://your-app-name.onrender.com`;
-  logger.system(`URL app cho self-ping: ${APP_URL}`);
-
-  cron.schedule('*/12 * * * *', async () => {
-    const pingTime = new Date().toISOString();
-    logger.system(`Bắt đầu ping theo lịch lúc ${pingTime}`);
-
-    try {
-      const startTime = Date.now();
-      logger.network(`Đang gửi GET request tới: ${APP_URL}/ping`);
-
-      const response = await axios.get(`${APP_URL}/ping`, {
-        timeout: 30000,
-      });
-
-      const endTime = Date.now();
-      const responseTime = endTime - startTime;
-
-      logger.success(`Keep-alive ping thành công!`);
-      logger.network(`Response status: ${response.status}`);
-      logger.timing('Keep-alive ping', responseTime);
-      logger.debug(`Response data:`, response.data);
-    } catch (error) {
-      logger.error(`Keep-alive ping thất bại lúc ${pingTime}`, error);
-      logger.error(`Thông báo lỗi: ${error.message}`);
-      logger.error(`Mã lỗi: ${error.code || 'Không xác định'}`);
-
-      if (error.response) {
-        logger.network(`Response status: ${error.response.status}`);
-        logger.debug(`Response data:`, error.response.data);
-      }
-    }
-  });
-
-  logger.success('Đã khởi tạo self-ping scheduler thành công');
-  logger.system('Lịch trình: Mỗi 12 phút');
-} else {
-  logger.system('Phát hiện môi trường development, bỏ qua self-ping scheduler');
-}
 
 // Start server
 logger.init('Đang khởi động web server...');
