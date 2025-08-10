@@ -143,6 +143,20 @@ guildSettingsSchema.post('findOneAndUpdate', function (doc) {
   }
 });
 
+const characterSystemSchema = new mongoose.Schema({
+  channel_id: { type: String, required: true, unique: true },
+  webhook_url: { type: String, required: true },
+  characters: [
+    {
+      id: { type: String, required: true },
+      name: { type: String, required: true },
+      avatar: { type: String, required: true },
+      description: { type: String, default: '' },
+    },
+  ],
+  default_character_id: { type: String },
+  created_at: { type: Date, default: Date.now },
+});
 // THÊM MỚI: Middleware cho ChannelConfig
 channelConfigSchema.pre('save', function (next) {
   logger.database(`Đang lưu channel config cho kênh ${this.channel_id}`);
@@ -159,4 +173,9 @@ logger.success('Đã đăng ký database middleware hooks thành công');
 
 logger.system('Đã export models và sẵn sàng sử dụng');
 
-module.exports = { Confession, GuildSettings, ChannelConfig };
+const CharacterSystem = mongoose.model(
+  'CharacterSystem',
+  characterSystemSchema
+);
+
+module.exports = { Confession, GuildSettings, ChannelConfig, CharacterSystem };
