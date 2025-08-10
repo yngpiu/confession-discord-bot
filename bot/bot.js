@@ -26,6 +26,7 @@ const {
 const {
   handleCharacterConfig,
   handleCharacterManage,
+  handleSendMessage,
   getCharacterSystem,
 } = require('./handlers/character');
 const { handleRegularMessage } = require('./handlers/message');

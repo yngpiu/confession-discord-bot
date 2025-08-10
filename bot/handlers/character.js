@@ -1,6 +1,8 @@
 const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { CharacterSystem } = require('../models');
 const logger = require('../logger');
+const axios = require('axios');
+const FormData = require('form-data');
 
 async function getCharacterSystem(channelId) {
   try {
@@ -251,3 +253,88 @@ module.exports = {
   handleRemoveCharacter,
   handleSetDefaultCharacter,
 };
+
+/**
+ * Gửi tin nhắn slash dưới tên nhân vật đã chọn (kèm file tuỳ chọn)
+ */
+async function handleSendMessage(interaction) {
+  const characterId = interaction.options.getString('character');
+  const message = interaction.options.getString('message');
+  const attachment = interaction.options.getAttachment('attachment');
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const system = await getCharacterSystem(interaction.channel.id);
+  if (!system) {
+    await interaction.followUp({
+      content:
+        '⚠️ Chưa cấu hình character system. Dùng `/character-config` trước.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const selectedCharacter = system.characters.find((c) => c.id === characterId);
+  if (!selectedCharacter) {
+    await interaction.followUp({
+      content: `❌ Không tìm thấy nhân vật "${characterId}".`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  try {
+    let webhookPayload;
+    let requestConfig = {};
+
+    if (attachment) {
+      const formData = new FormData();
+      const payload = {
+        username: selectedCharacter.name,
+        avatar_url: selectedCharacter.avatar,
+        content: message,
+      };
+      formData.append('payload_json', JSON.stringify(payload));
+
+      const response = await axios.get(attachment.url, {
+        responseType: 'arraybuffer',
+        timeout: 30000,
+      });
+
+      formData.append('files[0]', Buffer.from(response.data), {
+        filename: attachment.name,
+        contentType: attachment.contentType,
+      });
+
+      webhookPayload = formData;
+      requestConfig = {
+        headers: { ...formData.getHeaders() },
+        timeout: 60000,
+      };
+    } else {
+      webhookPayload = {
+        username: selectedCharacter.name,
+        avatar_url: selectedCharacter.avatar,
+        content: message,
+      };
+      requestConfig = {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+      };
+    }
+
+    await axios.post(system.webhook_url, webhookPayload, requestConfig);
+    await interaction.followUp({
+      content: `✅ Đã gửi tin nhắn dưới tên **${selectedCharacter.name}**!`,
+      flags: MessageFlags.Ephemeral,
+    });
+  } catch (error) {
+    logger.error('Error sending character message:', error);
+    await interaction.followUp({
+      content: '❌ Lỗi khi gửi tin nhắn qua webhook.',
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+module.exports.handleSendMessage = handleSendMessage;
