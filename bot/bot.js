@@ -11,8 +11,13 @@ const {
   ChannelType,
   MessageFlags,
 } = require('discord.js');
-const { Confession, GuildSettings } = require('./models');
+
+const { Confession, GuildSettings, ChannelConfig } = require('./models');
 const logger = require('./logger');
+
+// THÊM MỚI: Import cho chức năng idol/fan
+const axios = require('axios');
+const FormData = require('form-data');
 
 let client;
 
@@ -58,7 +63,6 @@ async function initializeBot(discordClient) {
       }
     } catch (error) {
       logger.error(`Error handling ${interactionType}:`, error);
-
       const errorMessage = 'Có lỗi xảy ra khi xử lý lệnh!';
 
       try {
@@ -78,8 +82,16 @@ async function initializeBot(discordClient) {
           `Failed to send error message for ${interactionType}:`,
           replyError
         );
-        // Prevent complete crash by not throwing the error
       }
+    }
+  });
+
+  // THÊM MỚI: Event listener cho tin nhắn thường (cho chức năng idol/fan)
+  client.on('messageCreate', async (message) => {
+    try {
+      await handleRegularMessage(message);
+    } catch (error) {
+      logger.error('Error handling regular message:', error);
     }
   });
 }
@@ -89,7 +101,7 @@ async function initializeBot(discordClient) {
  */
 async function registerCommands() {
   const commands = [
-    // Admin setup command
+    // ===== CÁC LỆNH CONFESSION CŨ (GIỮ NGUYÊN) =====
     new SlashCommandBuilder()
       .setName('setup')
       .setDescription('⚙️ Cấu hình bot cho server (admin)')
@@ -100,12 +112,11 @@ async function registerCommands() {
             'Channel để đăng confession (forum hoặc text hoặc voice nếu muốn)'
           )
           .setRequired(true)
-          // Loại này cho phép hầu hết các channel text-based hiện ra (Forum, Text, etc)
           .addChannelTypes(
             ChannelType.GuildText,
             ChannelType.GuildAnnouncement,
             ChannelType.GuildForum,
-            ChannelType.GuildVoice // Nếu bạn muốn cho phép chọn voice cũng được (thường không cần)
+            ChannelType.GuildVoice
           )
       )
       .addChannelOption((option) =>
@@ -123,19 +134,16 @@ async function registerCommands() {
       )
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    // View current config
     new SlashCommandBuilder()
       .setName('config')
       .setDescription('🔧 Xem cấu hình bot hiện tại (admin)')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    // Create guide thread
     new SlashCommandBuilder()
       .setName('create-guide')
       .setDescription('🧾 Tạo thread hướng dẫn gửi confession (admin)')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    // View confession lists
     new SlashCommandBuilder()
       .setName('pending')
       .setDescription('📋 Xem danh sách confession đang chờ duyệt (admin)')
@@ -151,7 +159,6 @@ async function registerCommands() {
       .setDescription('📜 Xem toàn bộ danh sách confession (admin)')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    // Manual approve/delete/detail commands
     new SlashCommandBuilder()
       .setName('approve')
       .setDescription('✅ Duyệt confession bằng ID (admin)')
@@ -184,6 +191,40 @@ async function registerCommands() {
           .setRequired(true)
       )
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+    // ===== CÁC LỆNH IDOL/FAN MỚI =====
+    new SlashCommandBuilder()
+      .setName('idol-setup')
+      .setDescription('🎭 Cấu hình idol và fan cho kênh này')
+      .addStringOption((option) =>
+        option.setName('idol_name').setDescription('Tên idol').setRequired(true)
+      )
+      .addStringOption((option) =>
+        option
+          .setName('idol_avatar')
+          .setDescription('Link avatar idol')
+          .setRequired(true)
+      )
+      .addStringOption((option) =>
+        option.setName('fan_name').setDescription('Tên fan').setRequired(true)
+      )
+      .addStringOption((option) =>
+        option
+          .setName('fan_avatar')
+          .setDescription('Link avatar fan')
+          .setRequired(true)
+      )
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+
+    new SlashCommandBuilder()
+      .setName('idol-config')
+      .setDescription('🔧 Xem cấu hình idol/fan của kênh này')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+
+    new SlashCommandBuilder()
+      .setName('idol-remove')
+      .setDescription('🗑️ Xóa cấu hình idol/fan khỏi kênh này')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
   ];
 
   try {
@@ -203,6 +244,7 @@ async function handleSlashCommand(interaction) {
   const startTime = Date.now();
 
   switch (commandName) {
+    // ===== CÁC LỆNH CONFESSION CŨ =====
     case 'setup':
       await handleSetup(interaction);
       break;
@@ -230,12 +272,26 @@ async function handleSlashCommand(interaction) {
     case 'detail':
       await handleDetail(interaction);
       break;
+
+    // ===== CÁC LỆNH IDOL/FAN MỚI =====
+    case 'idol-setup':
+      await handleIdolSetup(interaction);
+      break;
+    case 'idol-config':
+      await handleIdolConfig(interaction);
+      break;
+    case 'idol-remove':
+      await handleIdolRemove(interaction);
+      break;
+
     default:
       logger.warn(`Unknown command: ${commandName}`);
   }
 
   logger.timing(commandName, Date.now() - startTime);
 }
+
+// ===== TẤT CẢ FUNCTIONS CONFESSION CŨ (GIỮ NGUYÊN) =====
 
 /**
  * Cấu hình bot cho server - lưu thông tin forum channel, admin channel và admin role
@@ -245,7 +301,6 @@ async function handleSetup(interaction) {
   const adminChannel = interaction.options.getChannel('admin_channel');
   const adminRole = interaction.options.getRole('admin_role');
 
-  // Validate that we have a guild ID
   if (!interaction.guildId) {
     await interaction.reply({
       content:
@@ -265,7 +320,6 @@ async function handleSetup(interaction) {
   );
 
   try {
-    // Check if guild settings already exist
     const existingSettings = await GuildSettings.findOne({
       guild_id: interaction.guildId,
     });
@@ -274,29 +328,22 @@ async function handleSetup(interaction) {
       logger.config(
         `Updating existing settings for guild ${interaction.guildId}`
       );
-
-      // Update existing settings
       existingSettings.forum_channel_id = forumChannel.id;
       existingSettings.admin_channel_id = adminChannel.id;
       existingSettings.admin_role_id = adminRole.id;
-
       await existingSettings.save();
     } else {
       logger.config(`Creating new settings for guild ${interaction.guildId}`);
-
-      // Create new settings
       const newSettings = new GuildSettings({
         guild_id: interaction.guildId,
         forum_channel_id: forumChannel.id,
         admin_channel_id: adminChannel.id,
         admin_role_id: adminRole.id,
       });
-
       await newSettings.save();
     }
 
     logger.success(`Setup completed for guild: ${interaction.guild.name}`);
-
     await interaction.reply({
       content: `✅ Đã cấu hình bot thành công!\nForum: ${forumChannel}\nAdmin Channel: ${adminChannel}\nAdmin Role: ${adminRole}`,
       flags: MessageFlags.Ephemeral,
@@ -304,14 +351,12 @@ async function handleSetup(interaction) {
   } catch (error) {
     logger.error('Setup failed:', error);
 
-    // Handle duplicate key error specifically
     if (error.code === 11000) {
       logger.error('Duplicate key error details:', {
         keyPattern: error.keyPattern,
         keyValue: error.keyValue,
         collection: error.collection,
       });
-
       try {
         await interaction.reply({
           content:
@@ -324,7 +369,6 @@ async function handleSetup(interaction) {
       return;
     }
 
-    // Handle other database errors to prevent crash
     if (error.name === 'MongoError' || error.name === 'MongoServerError') {
       logger.error('MongoDB error during setup:', error);
       try {
@@ -338,7 +382,6 @@ async function handleSetup(interaction) {
       return;
     }
 
-    // Handle network/connection errors
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
       logger.error('Network/Connection error during setup:', error);
       try {
@@ -352,7 +395,6 @@ async function handleSetup(interaction) {
       return;
     }
 
-    // Generic error handling to prevent crash
     logger.error('Unexpected error during setup:', error);
     try {
       await interaction.reply({
@@ -409,7 +451,6 @@ async function handleConfig(interaction) {
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   } catch (error) {
     logger.error('Failed to get config:', error);
-
     try {
       await interaction.reply({
         content: '❌ Lỗi khi lấy thông tin cấu hình. Vui lòng thử lại sau.',
@@ -450,7 +491,6 @@ async function handleCreateGuide(interaction) {
       return;
     }
 
-    // Tạo embed hướng dẫn
     const embed = new EmbedBuilder()
       .setTitle('📝 Hướng dẫn gửi confession')
       .setDescription(
@@ -466,7 +506,6 @@ async function handleCreateGuide(interaction) {
       )
       .setColor(0x0099ff);
 
-    // Tạo các nút hành động
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('send_named')
@@ -478,7 +517,6 @@ async function handleCreateGuide(interaction) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    // Tạo thread trong forum
     const thread = await forumChannel.threads.create({
       name: '💌 GỬI CONFESSION TẠI ĐÂY! 💌',
       message: {
@@ -489,14 +527,12 @@ async function handleCreateGuide(interaction) {
     });
 
     logger.thread('Created guide thread', thread.name);
-
     await interaction.reply({
       content: '✅ Đã tạo thread hướng dẫn gửi confession.',
       flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
     logger.error('Failed to create guide thread:', error);
-
     try {
       await interaction.reply({
         content: '❌ Lỗi khi tạo thread hướng dẫn. Vui lòng thử lại sau.',
@@ -514,20 +550,16 @@ async function handleCreateGuide(interaction) {
 async function handleButtonInteraction(interaction) {
   const { customId } = interaction;
 
-  // Xử lý nút gửi confession
   if (customId === 'send_named' || customId === 'send_anonymous') {
     await handleConfessionButtons(interaction);
-  }
-  // Xử lý nút Bình luận ẩn danh
-  else if (customId.startsWith('anonymous_reply_')) {
+  } else if (customId.startsWith('anonymous_reply_')) {
     await handleAnonymousReply(interaction);
-  }
-  // Xử lý nút duyệt/từ chối confession
-  else if (customId.startsWith('approve_') || customId.startsWith('reject_')) {
+  } else if (
+    customId.startsWith('approve_') ||
+    customId.startsWith('reject_')
+  ) {
     await handleApprovalButtons(interaction);
-  }
-  // Xử lý nút phân trang
-  else if (customId.startsWith('page_')) {
+  } else if (customId.startsWith('page_')) {
     await handlePaginationButtons(interaction);
   }
 }
@@ -619,7 +651,6 @@ async function handleConfessionModalSubmit(interaction) {
       return;
     }
 
-    // Tìm ID confession tiếp theo
     const lastConfession = await Confession.findOne({
       guild_id: interaction.guildId,
     })
@@ -630,7 +661,6 @@ async function handleConfessionModalSubmit(interaction) {
       ? lastConfession.confession_id + 1
       : 1;
 
-    // Lưu confession vào database
     const confession = new Confession({
       confession_id: confessionNumber,
       guild_id: interaction.guildId,
@@ -643,7 +673,6 @@ async function handleConfessionModalSubmit(interaction) {
     await confession.save();
     logger.database(`Saved confession #${confessionNumber} to database`);
 
-    // Gửi đến admin channel để duyệt
     const adminChannel = client.channels.cache.get(settings.admin_channel_id);
     if (adminChannel) {
       const embed = new EmbedBuilder()
@@ -680,18 +709,15 @@ async function handleConfessionModalSubmit(interaction) {
       });
     }
 
-    // Thử gửi DM cho người dùng
     try {
       await interaction.user.send(
         `📨 Bạn đã gửi confession #${confessionNumber} thành công! Đang chờ admin duyệt.`
       );
-
       await interaction.followUp({
         content: `✅ Đã gửi confession #${confessionNumber} thành công!`,
         flags: MessageFlags.Ephemeral,
       });
     } catch (error) {
-      // Không thể gửi DM - có thể user tắt DM
       await interaction.followUp({
         content: `✅ Đã gửi confession #${confessionNumber} thành công! \n\n __Bật DM để nhận thông báo duyệt.__`,
         flags: MessageFlags.Ephemeral,
@@ -699,7 +725,6 @@ async function handleConfessionModalSubmit(interaction) {
     }
   } catch (error) {
     logger.error('Failed to handle confession submission:', error);
-
     try {
       await interaction.followUp({
         content: '❌ Lỗi khi gửi confession. Vui lòng thử lại sau.',
@@ -722,7 +747,6 @@ async function handleReplyModalSubmit(interaction) {
   const replyContent = interaction.fields.getTextInputValue('reply_content');
 
   try {
-    // Kiểm tra confession có tồn tại và đã được duyệt không
     const confession = await Confession.findOne({
       confession_id: parseInt(confessionId),
       guild_id: interaction.guildId,
@@ -737,7 +761,6 @@ async function handleReplyModalSubmit(interaction) {
       return;
     }
 
-    // Lấy thread và gửi reply
     const thread = await client.channels.fetch(confession.thread_id);
     if (!thread) {
       await interaction.reply({
@@ -747,7 +770,6 @@ async function handleReplyModalSubmit(interaction) {
       return;
     }
 
-    // Tạo embed cho Bình luận ẩn danh
     const replyEmbed = new EmbedBuilder()
       .setDescription(`**Gửi ẩn danh tới tác giả:**\n${replyContent}`)
       .setColor(0x36393f);
@@ -755,7 +777,6 @@ async function handleReplyModalSubmit(interaction) {
     await thread.send({ embeds: [replyEmbed] });
     logger.confession(`Anonymous reply sent`, confessionId);
 
-    // Đóng modal mà không hiển thị gì
     await interaction.deferUpdate();
   } catch (error) {
     logger.error('Failed to send anonymous reply:', error);
@@ -832,7 +853,6 @@ async function approveConfession(interaction, confession) {
   const user = await interaction.client.users.fetch(confession.user_id);
   const thread = await createConfessionThread(forumChannel, confession, user);
 
-  // Thêm nút Bình luận ẩn danh
   const replyRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`anonymous_reply_${confession.confession_id}`)
@@ -846,7 +866,6 @@ async function approveConfession(interaction, confession) {
     components: [replyRow],
   });
 
-  // Cập nhật database
   confession.status = 'approved';
   confession.thread_id = thread.id;
   await confession.save();
@@ -858,7 +877,6 @@ async function approveConfession(interaction, confession) {
     flags: MessageFlags.Ephemeral,
   });
 
-  // Thông báo cho người dùng
   try {
     await user.send(
       `📢 Confession #${confession.confession_id} của bạn đã được admin duyệt và đăng công khai.`
@@ -884,7 +902,6 @@ async function rejectConfession(interaction, confession) {
     flags: MessageFlags.Ephemeral,
   });
 
-  // Thông báo cho người dùng
   try {
     const user = await interaction.client.users.fetch(confession.user_id);
     await user.send(
@@ -913,12 +930,10 @@ function findCutPosition(text, maxLength) {
 
   return maxLength;
 }
+
 /**
  * Tạo thread trong forum cho confession đã được duyệt
  * Xử lý cả confession ngắn và dài (>2000 ký tự)
- */
-/**
- * Hàm tạo thread cho confession, cắt đoạn "Đọc tiếp bên dưới..."
  */
 async function createConfessionThread(forumChannel, confession, user) {
   const fullContent = confession.content;
@@ -943,7 +958,6 @@ async function createConfessionThread(forumChannel, confession, user) {
     });
   }
 
-  // Confession dài, cắt đoạn đọc tiếp
   const cutPos = findCutPosition(fullContent, allowedLength);
   const firstPart = fullContent.substring(0, cutPos).trim() + suffix;
 
@@ -960,6 +974,7 @@ async function createConfessionThread(forumChannel, confession, user) {
       remaining.length > MAX_CHUNK_SIZE
         ? remaining.substring(0, MAX_CHUNK_SIZE)
         : remaining;
+
     await thread.send({ content: chunk });
     remaining = remaining.substring(chunk.length);
   }
@@ -971,7 +986,6 @@ async function createConfessionThread(forumChannel, confession, user) {
   });
 
   await thread.send({ embeds: [creditEmbed] });
-
   return thread;
 }
 
@@ -1003,8 +1017,6 @@ async function checkAdminPermission(interaction) {
     return true;
   } catch (error) {
     logger.error('Error checking admin permission:', error);
-
-    // Prevent crash by handling the error gracefully
     try {
       await interaction.reply({
         content: '❌ Lỗi kiểm tra quyền admin. Vui lòng thử lại sau.',
@@ -1013,8 +1025,7 @@ async function checkAdminPermission(interaction) {
     } catch (replyError) {
       logger.error('Failed to send admin permission error reply:', replyError);
     }
-
-    return false; // Return false instead of throwing to prevent crash
+    return false;
   }
 }
 
@@ -1052,7 +1063,6 @@ async function showConfessionList(interaction, status, page = 0) {
     const totalCount = await Confession.countDocuments(query);
     const totalPages = Math.max(1, Math.ceil(totalCount / perPage));
 
-    // Xác định title và màu sắc
     let title, color;
     if (status === 'pending') {
       title = '📋 Confession Đang Chờ Duyệt';
@@ -1082,6 +1092,7 @@ async function showConfessionList(interaction, status, page = 0) {
         const userDisplay = confession.anonymous
           ? '🔒 Ẩn danh'
           : `<@${confession.user_id}>`;
+
         const contentPreview =
           confession.content.length > 100
             ? confession.content.substring(0, 100) + '...'
@@ -1110,7 +1121,6 @@ async function showConfessionList(interaction, status, page = 0) {
       text: `Trang ${page + 1}/${totalPages} • Tổng: ${totalCount} confession`,
     });
 
-    // Tạo nút phân trang
     const statusPrefix = status || 'all';
     const prevPage = Math.max(0, page - 1);
     const nextPage = Math.min(totalPages - 1, page + 1);
@@ -1139,7 +1149,6 @@ async function showConfessionList(interaction, status, page = 0) {
     });
   } catch (error) {
     logger.error('Error showing confession list:', error);
-
     try {
       await interaction.reply({
         content:
@@ -1254,7 +1263,6 @@ async function handlePaginationButtons(interaction) {
     await interaction.editReply({ embeds: [embed], components: [row] });
   } catch (error) {
     logger.error('Error handling pagination:', error);
-
     try {
       await interaction.editReply({
         content: '❌ Lỗi khi chuyển trang. Vui lòng thử lại sau.',
@@ -1271,7 +1279,6 @@ async function handlePaginationButtons(interaction) {
  */
 async function handleApprove(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
   const confessionId = interaction.options.getInteger('confession_id');
 
   if (!confessionId || isNaN(confessionId)) {
@@ -1301,7 +1308,6 @@ async function handleApprove(interaction) {
       });
     }
 
-    // Thực hiện duyệt confession
     await approveConfession(interaction, confession);
   } catch (error) {
     logger.error('Error handling approve command:', error);
@@ -1334,7 +1340,6 @@ async function handleDelete(interaction) {
       return;
     }
 
-    // Xóa thread nếu confession đã được duyệt
     if (confession.status === 'approved' && confession.thread_id) {
       try {
         const thread = await client.channels.fetch(confession.thread_id);
@@ -1347,7 +1352,6 @@ async function handleDelete(interaction) {
       }
     }
 
-    // Xóa confession khỏi database
     await Confession.deleteOne({
       confession_id: confessionId,
       guild_id: interaction.guildId,
@@ -1365,7 +1369,6 @@ async function handleDelete(interaction) {
       flags: MessageFlags.Ephemeral,
     });
 
-    // Thông báo cho người dùng
     try {
       const user = await client.users.fetch(confession.user_id);
       await user.send(
@@ -1376,7 +1379,6 @@ async function handleDelete(interaction) {
     }
   } catch (error) {
     logger.error('Error handling delete command:', error);
-
     try {
       await interaction.reply({
         content: '❌ Lỗi khi xóa confession. Vui lòng thử lại sau.',
@@ -1438,7 +1440,6 @@ async function handleDetail(interaction) {
         }
       );
 
-    // Chỉ hiển thị người gửi nếu không phải ẩn danh (cho admin xem)
     if (!confession.anonymous) {
       embed.addFields({
         name: 'Người gửi',
@@ -1462,7 +1463,6 @@ async function handleDetail(interaction) {
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   } catch (error) {
     logger.error('Error handling detail command:', error);
-
     try {
       await interaction.reply({
         content: '❌ Lỗi khi lấy chi tiết confession. Vui lòng thử lại sau.',
@@ -1470,6 +1470,378 @@ async function handleDetail(interaction) {
       });
     } catch (replyError) {
       logger.error('Failed to send detail error reply:', replyError);
+    }
+  }
+}
+
+// ===== CÁC FUNCTIONS MỚI CHO CHỨC NĂNG IDOL/FAN =====
+
+/**
+ * Hàm helper để lấy config kênh
+ */
+async function getChannelConfig(channelId) {
+  try {
+    return await ChannelConfig.findOne({ channel_id: channelId });
+  } catch (error) {
+    logger.error('Error getting channel config:', error);
+    return null;
+  }
+}
+
+/**
+ * Hàm helper để set config kênh
+ */
+async function setChannelConfig(
+  channelId,
+  webhookUrl,
+  idolName,
+  idolAvatar,
+  fanName,
+  fanAvatar
+) {
+  try {
+    await ChannelConfig.updateOne(
+      { channel_id: channelId },
+      {
+        $set: {
+          webhook_url: webhookUrl,
+          idol_name: idolName,
+          idol_avatar: idolAvatar,
+          fan_name: fanName,
+          fan_avatar: fanAvatar,
+        },
+      },
+      { upsert: true }
+    );
+    return true;
+  } catch (error) {
+    logger.error('Error setting channel config:', error);
+    return false;
+  }
+}
+
+/**
+ * Xử lý setup idol và fan cho kênh
+ */
+async function handleIdolSetup(interaction) {
+  const idolName = interaction.options.getString('idol_name');
+  const idolAvatar = interaction.options.getString('idol_avatar');
+  const fanName = interaction.options.getString('fan_name');
+  const fanAvatar = interaction.options.getString('fan_avatar');
+  const channel = interaction.channel;
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  try {
+    // Tạo hoặc lấy webhook cho kênh
+    let webhook;
+    const webhooks = await channel.fetchWebhooks();
+    const existingWebhook = webhooks.find((wh) =>
+      wh.name.includes('idol_webhook')
+    );
+
+    if (existingWebhook) {
+      webhook = existingWebhook;
+    } else {
+      webhook = await channel.createWebhook({
+        name: `${idolName}_idol_webhook`,
+        reason: 'Setup idol/fan webhook',
+      });
+    }
+
+    // Lưu config vào database
+    const success = await setChannelConfig(
+      channel.id,
+      webhook.url,
+      idolName,
+      idolAvatar,
+      fanName,
+      fanAvatar
+    );
+
+    if (success) {
+      logger.config(`Setup idol/fan for channel: ${channel.name}`);
+      await interaction.followUp({
+        content: `✅ Đã setup kênh \`${channel.name}\` với idol **${idolName}** và fan **${fanName}**\n\n**Cách sử dụng:**\n• Tin nhắn thường → hiển thị dưới tên **${idolName}**\n• \`!fan [nội dung]\` → hiển thị dưới tên **${fanName}**`,
+        flags: MessageFlags.Ephemeral,
+      });
+    } else {
+      throw new Error('Failed to save config to database');
+    }
+  } catch (error) {
+    logger.error('Error in idol setup:', error);
+    await interaction.followUp({
+      content: '❌ Lỗi khi setup idol/fan. Vui lòng thử lại sau.',
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+/**
+ * Xem cấu hình idol/fan hiện tại
+ */
+async function handleIdolConfig(interaction) {
+  const config = await getChannelConfig(interaction.channel.id);
+
+  if (!config) {
+    await interaction.reply({
+      content:
+        '⚠️ Kênh này chưa được cấu hình idol/fan. Sử dụng `/idol-setup` để cấu hình.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('🎭 Cấu hình Idol/Fan')
+    .setColor(0x00ff00)
+    .addFields(
+      { name: '🌟 Tên Idol', value: config.idol_name, inline: true },
+      { name: '💖 Tên Fan', value: config.fan_name, inline: true },
+      { name: '📍 Kênh', value: `<#${interaction.channel.id}>`, inline: false },
+      {
+        name: '📝 Cách sử dụng',
+        value: `• Tin nhắn thường → hiển thị dưới tên **${config.idol_name}**\n• \`!fan [nội dung]\` → hiển thị dưới tên **${config.fan_name}**`,
+        inline: false,
+      }
+    )
+    .setThumbnail(config.idol_avatar)
+    .setFooter({
+      text: 'Bot sẽ tự động xóa tin nhắn gốc và gửi lại qua webhook',
+    });
+
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+}
+
+/**
+ * Xóa cấu hình idol/fan
+ */
+async function handleIdolRemove(interaction) {
+  try {
+    const result = await ChannelConfig.deleteOne({
+      channel_id: interaction.channel.id,
+    });
+
+    if (result.deletedCount > 0) {
+      await interaction.reply({
+        content: '🗑️ Đã xóa cấu hình idol/fan khỏi kênh này.',
+        flags: MessageFlags.Ephemeral,
+      });
+    } else {
+      await interaction.reply({
+        content: '⚠️ Kênh này không có cấu hình idol/fan nào.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  } catch (error) {
+    logger.error('Error removing idol config:', error);
+    await interaction.reply({
+      content: '❌ Lỗi khi xóa cấu hình.',
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+/**
+ * Xử lý tin nhắn thường để chuyển thành webhook (CHỨC NĂNG MỚI)
+ */
+/**
+ * Xử lý tin nhắn thường để chuyển thành webhook (ĐÃ SỬA LỖI)
+ */
+/**
+ * Xử lý tin nhắn thường để chuyển thành webhook (SỬA LỖI MULTIPLE FILES)
+ */
+/**
+ * Xử lý tin nhắn thường để chuyển thành webhook (SỬA LỖI TIMEOUT)
+ */
+async function handleRegularMessage(message) {
+  // Bỏ qua bot, tin nhắn slash command, và tin nhắn trong DM
+  if (message.author.bot || message.content.startsWith('/') || !message.guild) {
+    return;
+  }
+
+  const config = await getChannelConfig(message.channel.id);
+  if (!config) {
+    return;
+  }
+
+  let content = message.content;
+  let username, avatarUrl;
+
+  if (content.startsWith('!fan ')) {
+    username = config.fan_name;
+    avatarUrl = config.fan_avatar;
+    content = content.substring(5);
+  } else {
+    username = config.idol_name;
+    avatarUrl = config.idol_avatar;
+  }
+
+  if (!content.trim() && message.attachments.size === 0) {
+    return;
+  }
+
+  try {
+    // GIỚI HẠN SỐ FILE TỐI ĐA
+    const MAX_FILES = 10; // Discord limit
+    const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8MB per file
+    const MAX_TOTAL_SIZE = 25 * 1024 * 1024; // 25MB total
+
+    if (message.attachments.size > MAX_FILES) {
+      logger.warn(
+        `⚠️ Too many files: ${message.attachments.size}. Max: ${MAX_FILES}`
+      );
+      return;
+    }
+
+    let webhookPayload;
+    let requestConfig = {};
+
+    if (message.attachments.size > 0) {
+      const formData = new FormData();
+
+      const payload = {
+        username: username,
+        avatar_url: avatarUrl,
+        content: content || '',
+      };
+
+      formData.append('payload_json', JSON.stringify(payload));
+
+      let fileIndex = 0;
+      let totalSize = 0;
+      const attachmentArray = Array.from(message.attachments.values());
+
+      for (const attachment of attachmentArray) {
+        try {
+          // KIỂM TRA DUNG LƯỢNG FILE
+          if (attachment.size > MAX_FILE_SIZE) {
+            logger.warn(
+              `⚠️ File too large: ${attachment.name} (${attachment.size} bytes). Skipping.`
+            );
+            continue;
+          }
+
+          if (totalSize + attachment.size > MAX_TOTAL_SIZE) {
+            logger.warn(
+              `⚠️ Total size limit reached. Skipping remaining files.`
+            );
+            break;
+          }
+
+          logger.config(
+            `📥 Downloading attachment ${fileIndex}: ${attachment.name} (${attachment.size} bytes)`
+          );
+
+          const response = await axios.get(attachment.url, {
+            responseType: 'arraybuffer',
+            timeout: 30000, // Tăng timeout cho download
+            maxRedirects: 5,
+            maxContentLength: MAX_FILE_SIZE,
+          });
+
+          const fieldName = `files[${fileIndex}]`;
+
+          formData.append(fieldName, Buffer.from(response.data), {
+            filename: attachment.name,
+            contentType: attachment.contentType || 'application/octet-stream',
+          });
+
+          totalSize += response.data.byteLength;
+          logger.success(
+            `✅ Added ${fieldName}: ${attachment.name} (${response.data.byteLength} bytes)`
+          );
+          fileIndex++;
+        } catch (error) {
+          logger.error(
+            `❌ Error with attachment ${attachment.name}:`,
+            error.message
+          );
+          // Tiếp tục với files khác
+        }
+      }
+
+      if (fileIndex === 0) {
+        // Không có file nào được xử lý thành công, gửi chỉ text
+        webhookPayload = {
+          username: username,
+          avatar_url: avatarUrl,
+          content: content || 'File không thể tải lên.',
+        };
+        requestConfig = {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000,
+        };
+      } else {
+        logger.config(`📎 Total: ${fileIndex} files, ${totalSize} bytes`);
+
+        webhookPayload = formData;
+
+        // TÍNH TIMEOUT DỰA TRÊN SỐ FILE VÀ DUNG LƯỢNG
+        const baseTimeout = 15000; // 15s base
+        const fileTimeout = fileIndex * 5000; // +5s per file
+        const sizeTimeout = Math.ceil(totalSize / (1024 * 1024)) * 3000; // +3s per MB
+        const finalTimeout = Math.min(
+          baseTimeout + fileTimeout + sizeTimeout,
+          120000
+        ); // Max 2 minutes
+
+        requestConfig = {
+          headers: { ...formData.getHeaders() },
+          timeout: finalTimeout,
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+        };
+
+        logger.config(`⏱️ Upload timeout: ${finalTimeout}ms`);
+      }
+    } else {
+      // Chỉ có text
+      webhookPayload = {
+        username: username,
+        avatar_url: avatarUrl,
+        content: content,
+      };
+
+      requestConfig = {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+      };
+    }
+
+    // GỬI WEBHOOK
+    logger.config(
+      `🚀 Sending webhook as ${username} (${message.attachments.size} files)`
+    );
+
+    await axios.post(config.webhook_url, webhookPayload, requestConfig);
+
+    // XÓA TIN NHẮN GỐC
+    await message.delete();
+    logger.success(`✅ Success: ${username} in ${message.channel.name}`);
+  } catch (error) {
+    logger.error('❌ Webhook error:', error.message);
+
+    if (error.code === 'ECONNABORTED') {
+      logger.error('🕒 Request timeout - consider reducing file size or count');
+    }
+
+    if (error.response) {
+      logger.error('Discord API Response:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+      });
+    }
+
+    // GỬI TIN NHẮN LỖI VÀO KÊNH
+    try {
+      await message.channel.send({
+        content: `⚠️ ${message.author}, không thể gửi tin nhắn qua webhook. Lý do: ${error.message}`,
+        reply: { messageReference: message.id, failIfNotExists: false },
+      });
+    } catch (replyError) {
+      logger.error('Cannot send error message:', replyError.message);
     }
   }
 }

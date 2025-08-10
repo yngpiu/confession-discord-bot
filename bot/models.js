@@ -1,7 +1,9 @@
 const mongoose = require('mongoose');
+
 const logger = require('./logger');
 
 logger.database('Import Mongoose thành công');
+
 logger.database('Đang khởi tạo database schemas...');
 
 const confessionSchema = new mongoose.Schema({
@@ -16,14 +18,14 @@ const confessionSchema = new mongoose.Schema({
 });
 
 logger.database('Đã tạo Confession schema với các trường:');
-logger.debug('  - confession_id: Number (bắt buộc)');
-logger.debug('  - guild_id: String (bắt buộc)');
-logger.debug('  - content: String (bắt buộc)');
-logger.debug('  - anonymous: Boolean (bắt buộc)');
-logger.debug('  - user_id: String (bắt buộc)');
-logger.debug('  - timestamp: Date (mặc định: hiện tại)');
-logger.debug('  - status: String (enum: pending, approved, mặc định: pending)');
-logger.debug('  - thread_id: String (tùy chọn)');
+logger.debug(' - confession_id: Number (bắt buộc)');
+logger.debug(' - guild_id: String (bắt buộc)');
+logger.debug(' - content: String (bắt buộc)');
+logger.debug(' - anonymous: Boolean (bắt buộc)');
+logger.debug(' - user_id: String (bắt buộc)');
+logger.debug(' - timestamp: Date (mặc định: hiện tại)');
+logger.debug(' - status: String (enum: pending, approved, mặc định: pending)');
+logger.debug(' - thread_id: String (tùy chọn)');
 
 const guildSettingsSchema = new mongoose.Schema({
   guild_id: { type: String, required: true, unique: true },
@@ -33,10 +35,30 @@ const guildSettingsSchema = new mongoose.Schema({
 });
 
 logger.database('Đã tạo GuildSettings schema với các trường:');
-logger.debug('  - guild_id: String (bắt buộc, duy nhất)');
-logger.debug('  - forum_channel_id: String (bắt buộc)');
-logger.debug('  - admin_channel_id: String (bắt buộc)');
-logger.debug('  - admin_role_id: String (bắt buộc)');
+logger.debug(' - guild_id: String (bắt buộc, duy nhất)');
+logger.debug(' - forum_channel_id: String (bắt buộc)');
+logger.debug(' - admin_channel_id: String (bắt buộc)');
+logger.debug(' - admin_role_id: String (bắt buộc)');
+
+// THÊM MỚI: Schema cho channel config idol/fan
+const channelConfigSchema = new mongoose.Schema({
+  channel_id: { type: String, required: true, unique: true },
+  webhook_url: { type: String, required: true },
+  idol_name: { type: String, required: true },
+  idol_avatar: { type: String, required: true },
+  fan_name: { type: String, required: true },
+  fan_avatar: { type: String, required: true },
+  created_at: { type: Date, default: Date.now },
+});
+
+logger.database('Đã tạo ChannelConfig schema với các trường:');
+logger.debug(' - channel_id: String (bắt buộc, duy nhất)');
+logger.debug(' - webhook_url: String (bắt buộc)');
+logger.debug(' - idol_name: String (bắt buộc)');
+logger.debug(' - idol_avatar: String (bắt buộc)');
+logger.debug(' - fan_name: String (bắt buộc)');
+logger.debug(' - fan_avatar: String (bắt buộc)');
+logger.debug(' - created_at: Date (mặc định: hiện tại)');
 
 logger.database('Đang tạo Mongoose models...');
 
@@ -47,6 +69,11 @@ logger.debug(`Tên collection: ${Confession.collection.name}`);
 const GuildSettings = mongoose.model('GuildSettings', guildSettingsSchema);
 logger.success('Đã tạo GuildSettings model thành công');
 logger.debug(`Tên collection: ${GuildSettings.collection.name}`);
+
+// THÊM MỚI: Model cho channel config
+const ChannelConfig = mongoose.model('ChannelConfig', channelConfigSchema);
+logger.success('Đã tạo ChannelConfig model thành công');
+logger.debug(`Tên collection: ${ChannelConfig.collection.name}`);
 
 // Add schema middleware for logging
 confessionSchema.pre('save', function (next) {
@@ -116,7 +143,20 @@ guildSettingsSchema.post('findOneAndUpdate', function (doc) {
   }
 });
 
+// THÊM MỚI: Middleware cho ChannelConfig
+channelConfigSchema.pre('save', function (next) {
+  logger.database(`Đang lưu channel config cho kênh ${this.channel_id}`);
+  logger.debug(`Idol: ${this.idol_name}, Fan: ${this.fan_name}`);
+  next();
+});
+
+channelConfigSchema.post('save', function (doc) {
+  logger.success(`Đã lưu channel config thành công cho kênh ${doc.channel_id}`);
+  logger.debug(`Document ID: ${doc._id}`);
+});
+
 logger.success('Đã đăng ký database middleware hooks thành công');
+
 logger.system('Đã export models và sẵn sàng sử dụng');
 
-module.exports = { Confession, GuildSettings };
+module.exports = { Confession, GuildSettings, ChannelConfig };
