@@ -25,6 +25,7 @@ const {
   handleCharacterRemove,
   handleSendMessage,
   getCharacterSystem,
+  getCharactersForGuild,
 } = require('./handlers/character');
 const { handleRegularMessage } = require('./handlers/message');
 const { setClient } = require('./context');
@@ -53,28 +54,32 @@ async function initializeBot(discordClient) {
     // THÊM kiểm tra autocomplete VÀO ĐẦU
     if (interaction.isAutocomplete()) {
       if (interaction.commandName === 'send') {
-        const system = await getCharacterSystem(
-          interaction.guildId,
-          interaction.channel?.id
-        );
-        if (!system) {
+        try {
+          // Use cached characters for faster autocomplete
+          const characters = await getCharactersForGuild(interaction.guildId);
+
+          if (characters.length === 0) {
+            await interaction.respond([]);
+            return;
+          }
+
+          const focusedValue = interaction.options.getFocused().toLowerCase();
+          const filtered = characters.filter(
+            (char) =>
+              char.id.toLowerCase().includes(focusedValue) ||
+              char.name.toLowerCase().includes(focusedValue)
+          );
+
+          await interaction.respond(
+            filtered.slice(0, 25).map((char) => ({
+              name: `${char.name} (${char.id})`,
+              value: char.id,
+            }))
+          );
+        } catch (error) {
+          logger.error('Error in autocomplete:', error);
           await interaction.respond([]);
-          return;
         }
-
-        const focusedValue = interaction.options.getFocused().toLowerCase();
-        const filtered = system.characters.filter(
-          (char) =>
-            char.id.toLowerCase().includes(focusedValue) ||
-            char.name.toLowerCase().includes(focusedValue)
-        );
-
-        await interaction.respond(
-          filtered.slice(0, 25).map((char) => ({
-            name: `${char.name} (${char.id})`,
-            value: char.id,
-          }))
-        );
       }
       return; // Dừng ở đây cho autocomplete
     }

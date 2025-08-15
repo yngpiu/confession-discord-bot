@@ -3,6 +3,7 @@ const { CharacterSystem } = require('../models');
 const logger = require('../logger');
 const axios = require('axios');
 const FormData = require('form-data');
+const { characterCache } = require('../utils/cache');
 
 // Fetch server-wide character system by guild; fallback to legacy channel-based record
 async function getCharacterSystem(guildId, channelId) {
@@ -12,7 +13,6 @@ async function getCharacterSystem(guildId, channelId) {
       const byGuild = await CharacterSystem.findOne({ guild_id: guildId });
       if (byGuild) return byGuild;
     }
-    if (byGuild) return byGuild;
     // Fallback: legacy channel-scoped
     if (channelId) {
       return await CharacterSystem.findOne({ channel_id: channelId });
@@ -21,6 +21,33 @@ async function getCharacterSystem(guildId, channelId) {
   } catch (error) {
     logger.error('Error getting character system:', error);
     return null;
+  }
+}
+
+/**
+ * Get characters for a guild with cache support
+ * @param {string} guildId
+ * @returns {Array} characters array
+ */
+async function getCharactersForGuild(guildId) {
+  // Try cache first
+  const cached = characterCache.get(guildId);
+  if (cached) {
+    return cached;
+  }
+
+  // Cache miss - fetch from database
+  try {
+    const system = await getCharacterSystem(guildId);
+    const characters = system?.characters || [];
+
+    // Cache the result
+    characterCache.set(guildId, characters);
+
+    return characters;
+  } catch (error) {
+    logger.error('Error getting characters for guild:', error);
+    return [];
   }
 }
 
@@ -206,6 +233,13 @@ async function handleAddCharacter(interaction, system, name, avatar) {
   }
   system.characters.push({ id: generatedId, name, avatar, description: '' });
   await system.save();
+
+  // Invalidate cache after adding character
+  characterCache.invalidate(interaction.guildId);
+  logger.debug(
+    `Added character ${name} (${generatedId}) to guild ${interaction.guild.name}`
+  );
+
   await interaction.followUp({
     content: `✅ Đã thêm nhân vật **${name}** với ID tự động: \`${generatedId}\``,
     flags: MessageFlags.Ephemeral,
@@ -258,6 +292,13 @@ async function handleRemoveCharacter(interaction, system, id) {
   const removedChar = system.characters[charIndex];
   system.characters.splice(charIndex, 1);
   await system.save();
+
+  // Invalidate cache after removing character
+  characterCache.invalidate(interaction.guildId);
+  logger.debug(
+    `Removed character ${removedChar.name} (${id}) from guild ${interaction.guild.name}`
+  );
+
   await interaction.followUp({
     content: `🗑️ Đã xóa nhân vật **${removedChar.name}** (ID: ${id})`,
     flags: MessageFlags.Ephemeral,
@@ -266,6 +307,7 @@ async function handleRemoveCharacter(interaction, system, id) {
 
 module.exports = {
   getCharacterSystem,
+  getCharactersForGuild,
   handleCharacterAdd,
   handleCharacterList,
   handleCharacterRemove,
