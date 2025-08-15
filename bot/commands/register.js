@@ -98,39 +98,32 @@ async function registerCommands(client) {
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     new SlashCommandBuilder()
-      .setName('character-manage')
-      .setDescription(
-        '⚙️ Quản lý nhân vật server (thêm/xóa/xem danh sách/đặt mặc định)'
-      )
+      .setName('character-add')
+      .setDescription('➕ Thêm nhân vật mới vào server')
       .addStringOption((option) =>
-        option
-          .setName('action')
-          .setDescription('Hành động cần thực hiện')
-          .setRequired(true)
-          .addChoices(
-            { name: '➕ Thêm nhân vật', value: 'add' },
-            { name: '📋 Xem danh sách', value: 'list' },
-            { name: '🗑️ Xóa nhân vật', value: 'remove' },
-            { name: '⭐ Đặt mặc định', value: 'default' }
-          )
-      )
-      .addStringOption((option) =>
-        option
-          .setName('name')
-          .setDescription('Tên nhân vật (cho add)')
-          .setRequired(false)
+        option.setName('name').setDescription('Tên nhân vật').setRequired(true)
       )
       .addStringOption((option) =>
         option
           .setName('avatar')
-          .setDescription('Avatar nhân vật (cho add)')
-          .setRequired(false)
+          .setDescription('Link avatar nhân vật')
+          .setRequired(true)
       )
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+
+    new SlashCommandBuilder()
+      .setName('character-list')
+      .setDescription('📋 Xem danh sách tất cả nhân vật trong server')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+
+    new SlashCommandBuilder()
+      .setName('character-remove')
+      .setDescription('🗑️ Xóa nhân vật khỏi server')
       .addStringOption((option) =>
         option
           .setName('id')
-          .setDescription('ID nhân vật (cho remove/default)')
-          .setRequired(false)
+          .setDescription('ID nhân vật cần xóa')
+          .setRequired(true)
       )
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 

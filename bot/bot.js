@@ -20,7 +20,9 @@ const {
 } = require('./handlers/confession');
 
 const {
-  handleCharacterManage,
+  handleCharacterAdd,
+  handleCharacterList,
+  handleCharacterRemove,
   handleSendMessage,
   getCharacterSystem,
 } = require('./handlers/character');
@@ -174,8 +176,14 @@ async function handleSlashCommand(interaction) {
       break;
 
     // ===== CÁC LỆNH CHARACTER =====
-    case 'character-manage':
-      await handleCharacterManage(interaction);
+    case 'character-add':
+      await handleCharacterAdd(interaction);
+      break;
+    case 'character-list':
+      await handleCharacterList(interaction);
+      break;
+    case 'character-remove':
+      await handleCharacterRemove(interaction);
       break;
     case 'send':
       await handleSendMessage(interaction);

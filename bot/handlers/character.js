@@ -92,11 +92,9 @@ async function handleCharacterConfig(interaction) {
   }
 }
 
-async function handleCharacterManage(interaction) {
-  const action = interaction.options.getString('action');
+async function handleCharacterAdd(interaction) {
   const name = interaction.options.getString('name');
   const avatar = interaction.options.getString('avatar');
-  const id = interaction.options.getString('id');
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   let system = await getCharacterSystem(
@@ -109,7 +107,6 @@ async function handleCharacterManage(interaction) {
     system = new CharacterSystem({
       guild_id: interaction.guildId,
       characters: [],
-      default_character_id: null,
     });
     await system.save();
     logger.success(
@@ -118,24 +115,67 @@ async function handleCharacterManage(interaction) {
   }
 
   try {
-    switch (action) {
-      case 'add':
-        await handleAddCharacter(interaction, system, name, avatar);
-        break;
-      case 'list':
-        await handleListCharacters(interaction, system);
-        break;
-      case 'remove':
-        await handleRemoveCharacter(interaction, system, id);
-        break;
-      case 'default':
-        await handleSetDefaultCharacter(interaction, system, id);
-        break;
-    }
+    await handleAddCharacter(interaction, system, name, avatar);
   } catch (error) {
-    logger.error('Error in character manage:', error);
+    logger.error('Error adding character:', error);
     await interaction.followUp({
-      content: '❌ Lỗi khi quản lý nhân vật.',
+      content: '❌ Lỗi khi thêm nhân vật.',
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+async function handleCharacterList(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const system = await getCharacterSystem(
+    interaction.guildId,
+    interaction.channel.id
+  );
+
+  if (!system || system.characters.length === 0) {
+    await interaction.followUp({
+      content:
+        '📭 Chưa có nhân vật nào. Dùng `/character-add` để thêm nhân vật đầu tiên.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  try {
+    await handleListCharacters(interaction, system);
+  } catch (error) {
+    logger.error('Error listing characters:', error);
+    await interaction.followUp({
+      content: '❌ Lỗi khi xem danh sách nhân vật.',
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+async function handleCharacterRemove(interaction) {
+  const id = interaction.options.getString('id');
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const system = await getCharacterSystem(
+    interaction.guildId,
+    interaction.channel.id
+  );
+
+  if (!system) {
+    await interaction.followUp({
+      content: '⚠️ Chưa có hệ thống character nào trong server.',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  try {
+    await handleRemoveCharacter(interaction, system, id);
+  } catch (error) {
+    logger.error('Error removing character:', error);
+    await interaction.followUp({
+      content: '❌ Lỗi khi xóa nhân vật.',
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -175,7 +215,7 @@ async function handleAddCharacter(interaction, system, name, avatar) {
 async function handleListCharacters(interaction, system) {
   if (system.characters.length === 0) {
     await interaction.followUp({
-      content: '📭 Chưa có nhân vật nào. Dùng `/character-manage add` để thêm.',
+      content: '📭 Chưa có nhân vật nào. Dùng `/character-add` để thêm.',
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -184,14 +224,11 @@ async function handleListCharacters(interaction, system) {
     .setTitle('🎭 Danh sách nhân vật')
     .setColor(0x0099ff)
     .setFooter({
-      text: `${system.characters.length} nhân vật • Mặc định: ${
-        system.default_character_id || 'Chưa đặt'
-      }`,
+      text: `${system.characters.length} nhân vật`,
     });
   system.characters.forEach((char) => {
-    const isDefault = char.id === system.default_character_id ? ' ⭐' : '';
     embed.addFields({
-      name: `${char.name}${isDefault}`,
+      name: `${char.name}`,
       value: `**ID:** ${char.id}`,
       inline: true,
     });
@@ -220,9 +257,6 @@ async function handleRemoveCharacter(interaction, system, id) {
   }
   const removedChar = system.characters[charIndex];
   system.characters.splice(charIndex, 1);
-  if (system.default_character_id === id) {
-    system.default_character_id = null;
-  }
   await system.save();
   await interaction.followUp({
     content: `🗑️ Đã xóa nhân vật **${removedChar.name}** (ID: ${id})`,
@@ -230,37 +264,14 @@ async function handleRemoveCharacter(interaction, system, id) {
   });
 }
 
-async function handleSetDefaultCharacter(interaction, system, id) {
-  if (!id) {
-    await interaction.followUp({
-      content: '❌ Vui lòng nhập ID nhân vật làm mặc định.',
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-  const character = system.characters.find((c) => c.id === id);
-  if (!character) {
-    await interaction.followUp({
-      content: `❌ Không tìm thấy nhân vật với ID "${id}".`,
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-  system.default_character_id = id;
-  await system.save();
-  await interaction.followUp({
-    content: `⭐ Đã đặt **${character.name}** làm nhân vật mặc định.`,
-    flags: MessageFlags.Ephemeral,
-  });
-}
-
 module.exports = {
   getCharacterSystem,
-  handleCharacterManage,
+  handleCharacterAdd,
+  handleCharacterList,
+  handleCharacterRemove,
   handleAddCharacter,
   handleListCharacters,
   handleRemoveCharacter,
-  handleSetDefaultCharacter,
 };
 
 /**

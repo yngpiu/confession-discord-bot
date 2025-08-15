@@ -8,48 +8,7 @@ async function handleRegularMessage(message) {
     return;
   }
 
-  const charSystem = await getCharacterSystem(
-    message.guild.id,
-    message.channel.id
-  );
-  if (charSystem && charSystem.default_character_id) {
-    const defaultChar = charSystem.characters.find(
-      (c) => c.id === charSystem.default_character_id
-    );
-    if (defaultChar && message.content.trim()) {
-      await processCharacterMessage(message, charSystem, defaultChar);
-    }
-  }
-}
-
-async function processCharacterMessage(message, system, character) {
-  const content = message.content;
-  if (!content.trim() && message.attachments.size === 0) {
-    return;
-  }
-  // Resolve or create a webhook for the current channel instead of using a stored one
-  try {
-    const webhooks = await message.channel.fetchWebhooks();
-    let webhook = webhooks.find((wh) => wh.name.includes('character_webhook'));
-    if (!webhook) {
-      webhook = await message.channel.createWebhook({
-        name: 'character_webhook',
-        reason: 'Send character message',
-      });
-    }
-    await sendWebhookMessage(
-      message,
-      webhook.url,
-      character.name,
-      character.avatar,
-      content
-    );
-  } catch (error) {
-    logger.error(
-      'Error resolving channel webhook for default character:',
-      error.message
-    );
-  }
+  // Bỏ tính năng default character - chỉ sử dụng /send để gửi tin nhắn character
 }
 
 async function sendWebhookMessage(
