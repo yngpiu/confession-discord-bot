@@ -98,39 +98,6 @@ async function registerCommands(client) {
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     new SlashCommandBuilder()
-      .setName('idol-setup')
-      .setDescription('🎭 Cấu hình idol và fan cho kênh này')
-      .addStringOption((option) =>
-        option.setName('idol_name').setDescription('Tên idol').setRequired(true)
-      )
-      .addStringOption((option) =>
-        option
-          .setName('idol_avatar')
-          .setDescription('Link avatar idol')
-          .setRequired(true)
-      )
-      .addStringOption((option) =>
-        option.setName('fan_name').setDescription('Tên fan').setRequired(true)
-      )
-      .addStringOption((option) =>
-        option
-          .setName('fan_avatar')
-          .setDescription('Link avatar fan')
-          .setRequired(true)
-      )
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
-
-    new SlashCommandBuilder()
-      .setName('idol-config')
-      .setDescription('🔧 Xem cấu hình idol/fan của kênh này')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
-
-    new SlashCommandBuilder()
-      .setName('idol-remove')
-      .setDescription('🗑️ Xóa cấu hình idol/fan khỏi kênh này')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
-
-    new SlashCommandBuilder()
       .setName('character-manage')
       .setDescription(
         '⚙️ Quản lý nhân vật server (thêm/xóa/xem danh sách/đặt mặc định)'

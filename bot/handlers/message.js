@@ -1,17 +1,10 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const logger = require('../logger');
-const { getChannelConfig } = require('./idol');
 const { getCharacterSystem } = require('./character');
 
 async function handleRegularMessage(message) {
   if (message.author.bot || message.content.startsWith('/') || !message.guild) {
-    return;
-  }
-
-  const idolConfig = await getChannelConfig(message.channel.id);
-  if (idolConfig) {
-    await processIdolMessage(message, idolConfig);
     return;
   }
 
@@ -27,29 +20,6 @@ async function handleRegularMessage(message) {
       await processCharacterMessage(message, charSystem, defaultChar);
     }
   }
-}
-
-async function processIdolMessage(message, config) {
-  let content = message.content;
-  let username, avatarUrl;
-  if (content.startsWith('!fan ')) {
-    username = config.fan_name;
-    avatarUrl = config.fan_avatar;
-    content = content.substring(5);
-  } else {
-    username = config.idol_name;
-    avatarUrl = config.idol_avatar;
-  }
-  if (!content.trim() && message.attachments.size === 0) {
-    return;
-  }
-  await sendWebhookMessage(
-    message,
-    config.webhook_url,
-    username,
-    avatarUrl,
-    content
-  );
 }
 
 async function processCharacterMessage(message, system, character) {

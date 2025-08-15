@@ -18,11 +18,7 @@ const {
   handleDelete,
   handleDetail,
 } = require('./handlers/confession');
-const {
-  handleIdolSetup,
-  handleIdolConfig,
-  handleIdolRemove,
-} = require('./handlers/idol');
+
 const {
   handleCharacterManage,
   handleSendMessage,
@@ -175,17 +171,6 @@ async function handleSlashCommand(interaction) {
       break;
     case 'detail':
       await handleDetail(interaction);
-      break;
-
-    // ===== CÁC LỆNH IDOL/FAN =====
-    case 'idol-setup':
-      await handleIdolSetup(interaction);
-      break;
-    case 'idol-config':
-      await handleIdolConfig(interaction);
-      break;
-    case 'idol-remove':
-      await handleIdolRemove(interaction);
       break;
 
     // ===== CÁC LỆNH CHARACTER =====
