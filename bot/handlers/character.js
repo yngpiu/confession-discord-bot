@@ -403,10 +403,9 @@ async function handleSendMessage(interaction) {
       });
     }
     await axios.post(webhook.url, webhookPayload, requestConfig);
-    await interaction.followUp({
-      content: `✅ Đã gửi tin nhắn dưới tên **${selectedCharacter.name}**!`,
-      flags: MessageFlags.Ephemeral,
-    });
+
+    // Chỉ gửi phản hồi âm thầm để xác nhận lệnh đã hoàn thành
+    await interaction.deleteReply();
   } catch (error) {
     logger.error('Error sending character message:', error);
     await interaction.followUp({
