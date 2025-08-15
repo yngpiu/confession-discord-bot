@@ -143,9 +143,12 @@ guildSettingsSchema.post('findOneAndUpdate', function (doc) {
   }
 });
 
+// Character system now scoped by guild (server-wide). Keep legacy fields for migration compatibility.
 const characterSystemSchema = new mongoose.Schema({
-  channel_id: { type: String, required: true, unique: true },
-  webhook_url: { type: String, required: true },
+  guild_id: { type: String, required: true, unique: true },
+  // Legacy fields (optional now):
+  channel_id: { type: String, required: false },
+  webhook_url: { type: String, required: false },
   characters: [
     {
       id: { type: String, required: true },

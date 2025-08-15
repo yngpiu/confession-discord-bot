@@ -131,13 +131,10 @@ async function registerCommands(client) {
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
     new SlashCommandBuilder()
-      .setName('character-config')
-      .setDescription('🎭 Cấu hình hệ thống multi-character cho kênh')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
-
-    new SlashCommandBuilder()
       .setName('character-manage')
-      .setDescription('⚙️ Quản lý nhân vật (thêm/xóa/xem danh sách)')
+      .setDescription(
+        '⚙️ Quản lý nhân vật server (thêm/xóa/xem danh sách/đặt mặc định)'
+      )
       .addStringOption((option) =>
         option
           .setName('action')
@@ -172,7 +169,9 @@ async function registerCommands(client) {
 
     new SlashCommandBuilder()
       .setName('send')
-      .setDescription('📤 Gửi tin nhắn dưới tên nhân vật')
+      .setDescription(
+        '📤 Gửi tin nhắn dưới tên nhân vật (tự động setup nếu cần)'
+      )
       .addStringOption((option) =>
         option
           .setName('character')

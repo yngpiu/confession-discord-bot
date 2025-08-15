@@ -4,9 +4,20 @@ const logger = require('../logger');
 const axios = require('axios');
 const FormData = require('form-data');
 
-async function getCharacterSystem(channelId) {
+// Fetch server-wide character system by guild; fallback to legacy channel-based record
+async function getCharacterSystem(guildId, channelId) {
   try {
-    return await CharacterSystem.findOne({ channel_id: channelId });
+    // Try guild-scoped first
+    if (guildId) {
+      const byGuild = await CharacterSystem.findOne({ guild_id: guildId });
+      if (byGuild) return byGuild;
+    }
+    if (byGuild) return byGuild;
+    // Fallback: legacy channel-scoped
+    if (channelId) {
+      return await CharacterSystem.findOne({ channel_id: channelId });
+    }
+    return null;
   } catch (error) {
     logger.error('Error getting character system:', error);
     return null;
@@ -17,12 +28,15 @@ async function handleCharacterConfig(interaction) {
   const channel = interaction.channel;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   try {
-    const existing = await getCharacterSystem(channel.id);
+    const existing = await getCharacterSystem(
+      interaction.guildId,
+      interaction.channel.id
+    );
     if (existing) {
       const embed = new EmbedBuilder()
         .setTitle('🎭 Character System - Đã cấu hình')
         .setDescription(
-          `Kênh này đã có hệ thống character với ${existing.characters.length} nhân vật`
+          `Server này đã có hệ thống character với ${existing.characters.length} nhân vật`
         )
         .setColor(0x00ff00)
         .addFields(
@@ -46,21 +60,9 @@ async function handleCharacterConfig(interaction) {
       return;
     }
 
-    let webhook;
-    const webhooks = await channel.fetchWebhooks();
-    const existingWebhook = webhooks.find((wh) =>
-      wh.name.includes('character_webhook')
-    );
-    webhook = existingWebhook
-      ? existingWebhook
-      : await channel.createWebhook({
-          name: `character_webhook`,
-          reason: 'Setup character system',
-        });
-
+    // Guild-scoped system: no single webhook stored; resolve per-channel when sending
     const newSystem = new CharacterSystem({
-      channel_id: channel.id,
-      webhook_url: webhook.url,
+      guild_id: interaction.guildId,
       characters: [],
       default_character_id: null,
     });
@@ -68,7 +70,7 @@ async function handleCharacterConfig(interaction) {
 
     const embed = new EmbedBuilder()
       .setTitle('✅ Character System - Setup thành công')
-      .setDescription('Kênh đã được cấu hình cho hệ thống multi-character!')
+      .setDescription('Server đã được cấu hình cho hệ thống multi-character!')
       .setColor(0x00ff00)
       .addFields({
         name: '📝 Bước tiếp theo',
@@ -97,14 +99,22 @@ async function handleCharacterManage(interaction) {
   const id = interaction.options.getString('id');
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const system = await getCharacterSystem(interaction.channel.id);
+  let system = await getCharacterSystem(
+    interaction.guildId,
+    interaction.channel.id
+  );
+
+  // Tự động tạo hệ thống nếu chưa có
   if (!system) {
-    await interaction.followUp({
-      content:
-        '⚠️ Chưa cấu hình character system. Dùng `/character-config` trước.',
-      flags: MessageFlags.Ephemeral,
+    system = new CharacterSystem({
+      guild_id: interaction.guildId,
+      characters: [],
+      default_character_id: null,
     });
-    return;
+    await system.save();
+    logger.success(
+      `Auto-created character system for guild ${interaction.guild.name}`
+    );
   }
 
   try {
@@ -246,7 +256,6 @@ async function handleSetDefaultCharacter(interaction, system, id) {
 
 module.exports = {
   getCharacterSystem,
-  handleCharacterConfig,
   handleCharacterManage,
   handleAddCharacter,
   handleListCharacters,
@@ -264,14 +273,22 @@ async function handleSendMessage(interaction) {
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const system = await getCharacterSystem(interaction.channel.id);
+  let system = await getCharacterSystem(
+    interaction.guildId,
+    interaction.channel.id
+  );
+
+  // Tự động tạo hệ thống nếu chưa có
   if (!system) {
-    await interaction.followUp({
-      content:
-        '⚠️ Chưa cấu hình character system. Dùng `/character-config` trước.',
-      flags: MessageFlags.Ephemeral,
+    system = new CharacterSystem({
+      guild_id: interaction.guildId,
+      characters: [],
+      default_character_id: null,
     });
-    return;
+    await system.save();
+    logger.success(
+      `Auto-created character system for guild ${interaction.guild.name}`
+    );
   }
 
   const selectedCharacter = system.characters.find((c) => c.id === characterId);
@@ -323,7 +340,16 @@ async function handleSendMessage(interaction) {
       };
     }
 
-    await axios.post(system.webhook_url, webhookPayload, requestConfig);
+    // Resolve or create a webhook for the current channel at send-time
+    const webhooks = await interaction.channel.fetchWebhooks();
+    let webhook = webhooks.find((wh) => wh.name.includes('character_webhook'));
+    if (!webhook) {
+      webhook = await interaction.channel.createWebhook({
+        name: 'character_webhook',
+        reason: 'Send character message',
+      });
+    }
+    await axios.post(webhook.url, webhookPayload, requestConfig);
     await interaction.followUp({
       content: `✅ Đã gửi tin nhắn dưới tên **${selectedCharacter.name}**!`,
       flags: MessageFlags.Ephemeral,

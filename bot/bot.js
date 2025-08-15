@@ -24,7 +24,6 @@ const {
   handleIdolRemove,
 } = require('./handlers/idol');
 const {
-  handleCharacterConfig,
   handleCharacterManage,
   handleSendMessage,
   getCharacterSystem,
@@ -56,7 +55,10 @@ async function initializeBot(discordClient) {
     // THÊM kiểm tra autocomplete VÀO ĐẦU
     if (interaction.isAutocomplete()) {
       if (interaction.commandName === 'send') {
-        const system = await getCharacterSystem(interaction.channel.id);
+        const system = await getCharacterSystem(
+          interaction.guildId,
+          interaction.channel?.id
+        );
         if (!system) {
           await interaction.respond([]);
           return;
@@ -187,9 +189,6 @@ async function handleSlashCommand(interaction) {
       break;
 
     // ===== CÁC LỆNH CHARACTER =====
-    case 'character-config':
-      await handleCharacterConfig(interaction);
-      break;
     case 'character-manage':
       await handleCharacterManage(interaction);
       break;
