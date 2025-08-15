@@ -41,12 +41,56 @@ async function initializeBot(discordClient) {
   client = discordClient;
   setClient(client);
 
-  // Event: Bot ready
+  // Event: Bot ready with detailed logging
   client.once('ready', async () => {
+    const readyTime = Date.now();
+    logger.success('🎉 BOT READY EVENT TRIGGERED!');
     logger.success(
-      `Bot online: ${client.user.tag} | Guilds: ${client.guilds.cache.size}`
+      `✅ Bot online: ${client.user.tag} | Guilds: ${client.guilds.cache.size}`
     );
-    await registerCommands(client);
+
+    // Log detailed bot information
+    logger.system('📊 Bot Details:');
+    logger.system(`  🤖 Username: ${client.user.username}`);
+    logger.system(`  🆔 Bot ID: ${client.user.id}`);
+    logger.system(`  🎯 Discriminator: ${client.user.discriminator}`);
+    logger.system(`  🌐 Guilds count: ${client.guilds.cache.size}`);
+    logger.system(`  👥 Users count: ${client.users.cache.size}`);
+    logger.system(`  📡 WebSocket ping: ${client.ws.ping}ms`);
+    logger.system(`  🌍 WebSocket status: ${client.ws.status} (0=READY)`);
+    logger.system(`  ⏰ Ready at: ${new Date(readyTime).toISOString()}`);
+
+    // Log guild information
+    if (client.guilds.cache.size > 0) {
+      logger.system('🏰 Connected Guilds:');
+      client.guilds.cache.forEach((guild) => {
+        logger.system(
+          `  - ${guild.name} (${guild.id}) - ${guild.memberCount} members`
+        );
+      });
+    } else {
+      logger.warn('⚠️ Bot chưa join guild nào!');
+    }
+
+    try {
+      logger.init('🔧 Registering slash commands...');
+      await registerCommands(client);
+      logger.success('✅ Slash commands registered successfully!');
+    } catch (error) {
+      logger.error('❌ Failed to register commands:', error);
+    }
+
+    // Set bot activity status
+    try {
+      await client.user.setActivity('Character & Confession Bot', {
+        type: 'WATCHING',
+      });
+      logger.system('🎮 Bot activity status set successfully');
+    } catch (error) {
+      logger.warn('⚠️ Could not set bot activity:', error.message);
+    }
+
+    logger.success('🚀 Bot is fully operational and ready to serve!');
   });
 
   // Event: Interaction created (slash commands, buttons, modals)
@@ -138,6 +182,31 @@ async function initializeBot(discordClient) {
     } catch (error) {
       logger.error('Error handling regular message:', error);
     }
+  });
+
+  // Additional connection state events
+  client.on('disconnect', () => {
+    logger.warn('🔌 BOT DISCONNECTED from Discord');
+    logger.warn('❌ Bot status: OFFLINE');
+  });
+
+  client.on('reconnecting', () => {
+    logger.info('🔄 BOT RECONNECTING to Discord...');
+    logger.info('⏳ Bot status: CONNECTING');
+  });
+
+  client.on('resume', (replayed) => {
+    logger.success(`🔄 BOT RESUMED connection (replayed ${replayed} events)`);
+    logger.success('✅ Bot status: ONLINE');
+  });
+
+  client.on('invalidated', () => {
+    logger.error('❌ BOT SESSION INVALIDATED - Token may be compromised');
+    logger.error('🚨 Bot status: OFFLINE (requires restart)');
+  });
+
+  client.on('rateLimit', (rateLimitData) => {
+    logger.warn('⚠️ BOT RATE LIMITED:', rateLimitData);
   });
 }
 

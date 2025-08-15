@@ -111,7 +111,7 @@ app.listen(PORT, '0.0.0.0', () => {
   logger.system(`Server được khởi động lúc: ${new Date().toISOString()}`);
 });
 
-// Start bot
+// Start bot with detailed logging
 logger.init('Đang bắt đầu Discord bot login...');
 logger.system(
   `Sử dụng bot token: ${
@@ -119,15 +119,95 @@ logger.system(
   }`
 );
 
+// Bot connection event listeners for detailed logging
+client.on('debug', (info) => {
+  if (info.includes('Identifying')) {
+    logger.info('🔐 Bot đang xác thực với Discord Gateway...');
+  } else if (info.includes('Heartbeat')) {
+    logger.debug(`💓 Heartbeat: ${info}`);
+  } else if (info.includes('Shard')) {
+    logger.info(`🌐 Shard event: ${info}`);
+  }
+});
+
+client.on('warn', (warning) => {
+  logger.warn(`⚠️ Discord Warning: ${warning}`);
+});
+
+client.on('error', (error) => {
+  logger.error('❌ Discord Client Error:', error);
+  logger.error('Error details:', error.message);
+  logger.error('Error stack:', error.stack);
+});
+
+client.on('shardError', (error, shardId) => {
+  logger.error(`❌ Shard ${shardId} Error:`, error);
+});
+
+client.on('shardDisconnect', (event, shardId) => {
+  logger.warn(`🔌 Shard ${shardId} Disconnected:`, event);
+});
+
+client.on('shardReconnecting', (shardId) => {
+  logger.info(`🔄 Shard ${shardId} đang reconnecting...`);
+});
+
+client.on('shardReady', (shardId) => {
+  logger.success(`✅ Shard ${shardId} đã ready!`);
+});
+
+client.on('shardResume', (shardId, replayed) => {
+  logger.success(`🔄 Shard ${shardId} resumed (replayed ${replayed} events)`);
+});
+
+// Connection state tracking
+let connectionStartTime = Date.now();
+
 client
   .login(process.env.BOT_TOKEN)
   .then(() => {
-    logger.success('Discord bot login thành công');
+    const loginTime = Date.now() - connectionStartTime;
+    logger.success(`✅ Discord bot login thành công sau ${loginTime}ms`);
+    logger.system(`🤖 Bot user: ${client.user?.tag || 'Chưa có thông tin'}`);
+    logger.system(`📊 Bot ID: ${client.user?.id || 'Chưa có thông tin'}`);
+    logger.system(
+      `🌐 WebSocket Status: ${client.ws.status} (0=READY, 1=CONNECTING, 2=RECONNECTING, 3=IDLE, 4=NEARLY, 5=DISCONNECTED, 6=WAITING_FOR_GUILDS, 7=IDENTIFYING, 8=RESUMING)`
+    );
   })
   .catch((error) => {
-    logger.error('Discord bot login thất bại', error);
-    logger.error('Lỗi login:', error.message);
+    const loginTime = Date.now() - connectionStartTime;
+    logger.error(`❌ Discord bot login thất bại sau ${loginTime}ms`);
+    logger.error('Chi tiết lỗi:', error.message);
+    logger.error('Error code:', error.code);
+    logger.error('Full error:', error);
+
+    // Specific error handling
+    if (error.code === 'TOKEN_INVALID') {
+      logger.error(
+        '🔑 TOKEN KHÔNG HỢP LỆ - Kiểm tra lại BOT_TOKEN trong environment variables'
+      );
+    } else if (error.code === 'DISALLOWED_INTENTS') {
+      logger.error(
+        '🚫 INTENTS KHÔNG ĐƯỢC PHÉP - Kiểm tra Privileged Gateway Intents trong Discord Developer Portal'
+      );
+    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      logger.error('🌐 LỖI MẠNG - Không thể kết nối tới Discord API');
+    }
+
+    process.exit(1); // Exit if bot can't connect
   });
+
+// Timeout để kiểm tra bot có kết nối được không
+setTimeout(() => {
+  if (!client.readyAt) {
+    logger.error('⏰ TIMEOUT: Bot không thể kết nối sau 30 giây');
+    logger.error('🔍 Debug thông tin:');
+    logger.error(`  - WebSocket Status: ${client.ws.status}`);
+    logger.error(`  - Token có tồn tại: ${!!process.env.BOT_TOKEN}`);
+    logger.error(`  - User info: ${client.user?.tag || 'Không có'}`);
+    logger.error(`  - Ready timestamp: ${client.readyAt || 'Chưa ready'}`);
+  }
+}, 30000);
 
 logger.success('Hoàn thành chuỗi khởi động ứng dụng');
 logger.system('Thời gian khởi động:', new Date().toISOString());
